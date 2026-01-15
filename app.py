@@ -11,7 +11,7 @@ from utils.subject_map import SUBJECT_MAP
 from utils.pdf_reader import attendance_pdf_to_df
 from datetime import datetime
 
-
+st.set_page_config(layout="wide")
 st.title("Class Bunk Predictor OS 😎")
 
 # -----------------------------
@@ -111,83 +111,6 @@ if att_file:
     timetable = pd.DataFrame(schedule)
 
     # -----------------------------
-    # SMART BUNK VERDICT (WEEKLY)
-    # -----------------------------
-
-    st.subheader("🧠 Smart Bunk Verdict (Weekly)")
-    verdicts = []
-
-    for _, row in timetable.iterrows():
-        record = att[att["code"] == row["code"]]
-
-        if record.empty:
-            continue
-
-        attended = int(record["attended"].values[0])
-        total = int(record["total"].values[0])
-        percent = float(record["percent"].values[0])
-
-        allow = bunk_allowed(attended, total)
-        budget = bunk_budget(attended, total)
-        warn = warning(percent)
-
-        verdicts.append({
-            "day": row["day"],
-            "time": row["time"],
-            "subject": SUBJECT_MAP.get(row["code"], row["code"]),
-            "status": "BUNK 😎" if allow else "ATTEND 💀",
-            "percent": round(percent, 2),
-            "budget": budget,
-            "warn": warn
-        })
-
-    weekly = group_weekly(verdicts)
-    DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri"]
-
-    for day in DAY_ORDER:
-        if day not in weekly:
-            continue
-
-        st.markdown(f"### 📅 {day}")
-
-        for v in weekly[day]:
-            msg = (
-                f"{v['time']} | {v['subject']} → {v['status']} | "
-                f"Budget: {v['budget']} | {v['warn']}"
-            )
-
-            if "BUNK" in v["status"]:
-                st.success(msg)
-            else:
-                st.error(msg)
-
-    # -----------------------------
-    # Attendance Graph
-    # -----------------------------
-
-    st.subheader("📊 Attendance Graph")
-
-    graph_df = att.copy()
-    graph_df["subject"] = graph_df["code"].map(
-        lambda x: SUBJECT_MAP.get(x, x)
-    )
-    graph_df = graph_df.set_index("subject")["percent"]
-
-    st.bar_chart(graph_df)
-
-    # -----------------------------
-    # Future Prediction
-    # -----------------------------
-
-    st.subheader("🔮 Future Attendance Prediction")
-    weeks = st.slider("Weeks Ahead", 1, 12)
-
-    for _, row in att.iterrows():
-        future = predict(row["attended"], row["total"], weeks, 5)
-        subject = SUBJECT_MAP.get(row["code"], row["code"])
-        st.write(f"{subject} → {round(future, 2)}%")
-
-    # -----------------------------
     # Today's Smart Bunk Plan
     # -----------------------------
 
@@ -218,6 +141,111 @@ if att_file:
                 st.warning(f"{label} → RISKY ⚠️ ({round(future_percent,2)}%)")
             else:
                 st.error(f"{label} → MUST ATTEND ❌ ({round(future_percent,2)}%)")
+        
+    
+    # -----------------------------
+    # Priority Subject
+    # -----------------------------
+
+    st.subheader("🚨 Priority Subjects (Needs Immediate Attention)")
+
+    TARGET = 0.75
+
+    low_attendance = att[(att["total"] > 0) & (att["percent"] < 75)]
+
+    if low_attendance.empty:
+        st.success("All subjects are above 75%. Rare W 🏆")
+    else:
+        for _, row in low_attendance.sort_values("percent").iterrows():
+            attended = int(row["attended"])
+            total = int(row["total"])
+            percent = float(row["percent"])
+
+            subject = SUBJECT_MAP.get(row["code"], row["code"])
+
+            required = (TARGET * total - attended) / (1 - TARGET)
+            required_classes = max(0, math.ceil(required))
+
+            st.error(
+                f"🔥 {subject}\n\n"
+                f"Current Attendance: {round(percent, 2)}%\n"
+                f"Attend next {required_classes} classes continuously to reach 75%."
+            )
+
+    # -----------------------------
+    # Attendance Graph
+    # -----------------------------
+
+    st.subheader("📊 Attendance Graph")
+
+    graph_df = att.copy()
+    graph_df["subject"] = graph_df["code"].map(
+        lambda x: SUBJECT_MAP.get(x, x)
+    )
+    graph_df = graph_df.set_index("subject")["percent"]
+
+    st.bar_chart(graph_df)
+
+    # -----------------------------
+    # SMART BUNK VERDICT (WEEKLY)
+    # -----------------------------
+
+    st.subheader("🧠 Smart Bunk Verdict")
+
+    verdicts = []
+
+    for _, row in timetable.iterrows():
+        record = att[att["code"] == row["code"]]
+        if record.empty:
+            continue
+
+        attended = int(record["attended"].values[0])
+        total = int(record["total"].values[0])
+        percent = float(record["percent"].values[0])
+
+        verdicts.append({
+            "day": row["day"],
+            "time": row["time"],
+            "subject": SUBJECT_MAP.get(row["code"], row["code"]),
+            "status": "BUNK 😎" if bunk_allowed(attended, total) else "ATTEND 💀",
+            "budget": bunk_budget(attended, total),
+            "warn": warning(percent)
+        })
+
+    weekly = group_weekly(verdicts)
+    
+    # -----------------------------
+    # DAY SELECTOR
+    # -----------------------------
+    DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+    selected_day = st.selectbox("📅 Select Day", DAY_ORDER)
+
+    if selected_day not in weekly:
+        st.info("No classes scheduled for this day 🎉")
+    else:
+        for v in weekly[selected_day]:
+            msg = (
+                f"{v['time']} | {v['subject']} → {v['status']} | "
+                f"Budget: {v['budget']} | {v['warn']}"
+            )
+
+            if "BUNK" in v["status"]:
+                st.success(msg)
+            else:
+                st.error(msg)
+
+    # -----------------------------
+    # Future Prediction
+    # -----------------------------
+
+    st.subheader("🔮 Future Attendance Prediction")
+    weeks = st.slider("Weeks Ahead", 1, 12)
+
+    for _, row in att.iterrows():
+        future = predict(row["attended"], row["total"], weeks, 5)
+        subject = SUBJECT_MAP.get(row["code"], row["code"])
+        st.write(f"{subject} → {round(future, 2)}%")
+
 
     # -----------------------------
     # Classes Needed to Reach 75%
@@ -231,10 +259,15 @@ if att_file:
         attended = int(row["attended"])
         total = int(row["total"])
 
+        subject = SUBJECT_MAP.get(row["code"], row["code"])
+
+        # ✅ FIX: subject not started yet
+        if total == 0:
+            st.info(f"{subject} → Subject not started yet ⏳")
+            continue
+
         required = (TARGET * total - attended) / (1 - TARGET)
         required_classes = max(0, math.ceil(required))
-
-        subject = SUBJECT_MAP.get(row["code"], row["code"])
 
         if required_classes == 0:
             st.success(f"{subject} → Already above 75% 😎")
@@ -242,27 +275,7 @@ if att_file:
             st.warning(
                 f"{subject} → Attend next {required_classes} classes continuously to reach 75%"
             )
-
-    # -----------------------------
-    # Priority Subject
-    # -----------------------------
-
-    st.subheader("🚨 Priority Subject (Needs Immediate Attention)")
-
-    below_75 = att[att["percent"] < 75]
-
-    if below_75.empty:
-        st.success("All subjects are above 75%. Rare W 🏆")
-    else:
-        priority_row = below_75.sort_values("percent").iloc[0]
-        subject = SUBJECT_MAP.get(priority_row["code"], priority_row["code"])
-
-        st.error(
-            f"🔥 PRIORITY SUBJECT: {subject}\n\n"
-            f"Current Attendance: {round(priority_row['percent'], 2)}%\n"
-            f"Attend this subject until it crosses 75%."
-        )
-
+            
     # -----------------------------
     # Subject-wise Bunk Options
     # -----------------------------
@@ -293,4 +306,4 @@ if att_file:
             st.error(
                 f"{subject} → NO BUNK ❌\n"
                 f"Below 75% by {round(75 - percent, 2)}%"
-            )
+            ) 
