@@ -10,9 +10,16 @@ from core.prediction import predict, group_weekly
 from utils.subject_map import SUBJECT_MAP
 from utils.pdf_reader import attendance_pdf_to_df
 from datetime import datetime
+from core.attendance_logic import get_subject_total_classes
+
 
 st.set_page_config(layout="wide")
 st.title("Class Bunk Predictor OS 😎")
+st.markdown(
+    "<span style='color: #2e7d32; font-weight: 600;'>📅 Attendance adjusted for holidays & exams</span>",
+    unsafe_allow_html=True
+)
+
 
 # -----------------------------
 # PERMANENT TIMETABLE LOADER
@@ -128,10 +135,18 @@ if att_file:
             if record.empty:
                 continue
 
-            attended = int(record["attended"].values[0])
-            total = int(record["total"].values[0])
+            code = row["code"]
+            subject = SUBJECT_MAP.get(code, code)
 
-            future_percent = (attended / (total + 1)) * 100
+            attended = int(record["attended"].values[0])
+            delivered = int(record["total"].values[0])  # ERP Eligible Delivered (till now)
+
+            # Current attendance (correct, ERP-based)
+            percent = round((attended / delivered) * 100, 2) if delivered > 0 else 0.0
+
+            # Attendance AFTER attending today's class
+            future_percent = round(((attended + 1) / (delivered + 1)) * 100, 2)
+
             subject = SUBJECT_MAP.get(row["code"], row["code"])
             label = f"{row['time']} | {subject}"
 
@@ -157,13 +172,17 @@ if att_file:
         st.success("All subjects are above 75%. Rare W 🏆")
     else:
         for _, row in low_attendance.sort_values("percent").iterrows():
+            code = row["code"]
+            subject = SUBJECT_MAP.get(code, code)
+
             attended = int(row["attended"])
-            total = int(row["total"])
-            percent = float(row["percent"])
+            delivered = int(row["total"])  # ERP: Eligible Delivered till now
 
-            subject = SUBJECT_MAP.get(row["code"], row["code"])
+            # Current attendance (ERP-correct)
+            percent = round((attended / delivered) * 100, 2) if delivered > 0 else 0.0
 
-            required = (TARGET * total - attended) / (1 - TARGET)
+            # Classes needed from THIS POINT onward to reach 75%
+            required = (TARGET * delivered - attended) / (1 - TARGET)
             required_classes = max(0, math.ceil(required))
 
             st.error(
@@ -176,15 +195,22 @@ if att_file:
     # Attendance Graph
     # -----------------------------
 
-    st.subheader("📊 Attendance Graph")
+        st.subheader("📊 Attendance Graph")
 
-    graph_df = att.copy()
-    graph_df["subject"] = graph_df["code"].map(
-        lambda x: SUBJECT_MAP.get(x, x)
-    )
-    graph_df = graph_df.set_index("subject")["percent"]
+        graph_df = att.copy()
 
-    st.bar_chart(graph_df)
+        graph_df["subject"] = graph_df["code"].map(lambda x: SUBJECT_MAP.get(x, x))
+
+        # ERP-correct current attendance percentage
+        graph_df["percent"] = graph_df.apply(
+            lambda r: round(
+                (r["attended"] / r["total"]) * 100, 2
+            ) if r["total"] > 0 else 0.0,
+            axis=1
+        )
+
+        graph_df = graph_df.set_index("subject")["percent"]
+        st.bar_chart(graph_df)
 
     # -----------------------------
     # SMART BUNK VERDICT (WEEKLY)
@@ -198,10 +224,19 @@ if att_file:
         record = att[att["code"] == row["code"]]
         if record.empty:
             continue
+        
+        code = row["code"]
+        subject = SUBJECT_MAP.get(code, code)
 
         attended = int(record["attended"].values[0])
-        total = int(record["total"].values[0])
-        percent = float(record["percent"].values[0])
+
+        # Semester-aware total (correct for bunk decisions)
+        total = get_subject_total_classes(code, timetable)
+
+        # Current semester-level percentage (projection baseline)
+        percent = round((attended / total) * 100, 2) if total > 0 else 0.0
+
+
 
         verdicts.append({
             "day": row["day"],
@@ -242,10 +277,16 @@ if att_file:
     weeks = st.slider("Weeks Ahead", 1, 12)
 
     for _, row in att.iterrows():
-        future = predict(row["attended"], row["total"], weeks, 5)
-        subject = SUBJECT_MAP.get(row["code"], row["code"])
-        st.write(f"{subject} → {round(future, 2)}%")
+        code = row["code"]
+        subject = SUBJECT_MAP.get(code, code)
 
+        attended = int(row["attended"])
+
+        semester_total = get_subject_total_classes(code, timetable)
+
+        future = predict(attended, semester_total, weeks, 5)
+
+        st.write(f"{subject} → {round(future, 2)}%")
 
     # -----------------------------
     # Classes Needed to Reach 75%
@@ -256,25 +297,37 @@ if att_file:
     TARGET = 0.75
 
     for _, row in att.iterrows():
+        code = row["code"]
+        subject = SUBJECT_MAP.get(code, code)
+
         attended = int(row["attended"])
-        total = int(row["total"])
+        delivered = int(row["total"])  # ERP: classes delivered till now
 
-        subject = SUBJECT_MAP.get(row["code"], row["code"])
-
-        # ✅ FIX: subject not started yet
-        if total == 0:
-            st.info(f"{subject} → Subject not started yet ⏳")
+        # ✅ Subject not yet started
+        if delivered == 0:
+            st.info(f"{subject} → Subject not yet started ⏳")
             continue
 
-        required = (TARGET * total - attended) / (1 - TARGET)
+        # ✅ Already above 75%
+        current_percent = attended / delivered
+        if current_percent >= TARGET:
+            st.success(f"{subject} → Already above 75% 😎")
+            continue
+
+        # ✅ Classes needed from NOW onward
+        required = (TARGET * delivered - attended) / (1 - TARGET)
         required_classes = max(0, math.ceil(required))
 
-        if required_classes == 0:
-            st.success(f"{subject} → Already above 75% 😎")
-        else:
-            st.warning(
-                f"{subject} → Attend next {required_classes} classes continuously to reach 75%"
-            )
+        st.warning(
+            f"{subject} → Attend next {required_classes} classes continuously to reach 75%"
+)
+
+        # if required_classes == 0:
+        #     st.success(f"{subject} → Already above 75% 😎")
+        # else:
+        #     st.warning(
+        #         f"{subject} → Attend next {required_classes} classes continuously to reach 75%"
+        #     )
             
     # -----------------------------
     # Subject-wise Bunk Options
@@ -283,9 +336,25 @@ if att_file:
     st.subheader("🎯 Subject-wise Bunking Options")
 
     for _, row in att.iterrows():
-        subject = SUBJECT_MAP.get(row["code"], row["code"])
-        total = int(row["total"])
-        percent = float(row["percent"])
+        code = row["code"]
+        subject = SUBJECT_MAP.get(code, code)
+
+        attended = int(row["attended"])``
+        delivered = int(row["total"])  # ERP delivered till now
+
+        # ✅ Subject not yet started
+        if delivered == 0:
+            st.info(
+                f"{subject} → NOT STARTED YET ⏳\n"
+                f"No attendance data available"
+            )
+            continue
+
+        # Semester-aware total (for bunking decisions)
+        semester_total = get_subject_total_classes(code, timetable)
+
+        percent = round((attended / semester_total) * 100, 2) if semester_total > 0 else 0.0
+
 
         if total == 0:
             st.info(
@@ -307,3 +376,4 @@ if att_file:
                 f"{subject} → NO BUNK ❌\n"
                 f"Below 75% by {round(75 - percent, 2)}%"
             ) 
+            
