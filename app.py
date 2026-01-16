@@ -11,14 +11,28 @@ from utils.subject_map import SUBJECT_MAP
 from utils.pdf_reader import attendance_pdf_to_df
 from datetime import datetime
 from core.attendance_logic import get_subject_total_classes
+from PIL import Image
+import warnings
 
+warnings.filterwarnings("ignore", message="Could not get FontBBox")
 
-st.set_page_config(layout="wide")
-st.title("Class Bunk Predictor OS 😎")
-st.markdown(
-    "<span style='color: #2e7d32; font-weight: 600;'>📅 Attendance adjusted for holidays & exams</span>",
-    unsafe_allow_html=True
+logo = Image.open("assets/logo.png")
+st.image(logo, width=80)
+
+st.set_page_config(
+    page_title="AttendWise",
+    page_icon="😎",
+    layout="wide"
 )
+
+col1, col2 = st.columns([1, 6])
+
+with col1:
+    st.image("assets/logo.png", width=80)
+
+with col2:
+    st.title("AttendWise")
+    st.caption("📅 Attendance adjusted for holidays & exams")
 
 
 # -----------------------------
@@ -35,19 +49,21 @@ def load_timetables():
 
 timetables = load_timetables()
 
-group = st.selectbox(
-    "Select your Group",
-    ["Group A", "Group B"]
-)
+with st.sidebar:
+    st.header("🎓 Setup")
 
+    group = st.selectbox(
+        "Select Group",
+        ["Group A", "Group B"]
+    )
 # -----------------------------
 # ATTENDANCE UPLOAD
 # -----------------------------
 
 att_file = st.file_uploader(
-    "Upload Attendance (.xlsx or Attendance PDF)",
-    type=["xlsx", "pdf"]
-)
+        "Upload Attendance (.xlsx or PDF)",
+        type=["xlsx", "pdf"]
+    )
 
 # -----------------------------
 # Helpers
@@ -58,6 +74,30 @@ def extract_course_code(text):
         return None
     match = re.match(r"(25[A-Z]{3}-\d+)", str(text))
     return match.group(1) if match else None
+
+def class_card(time, subject, verdict, percent, level):
+    color = {
+        "SAFE": "#2ecc71",
+        "RISKY": "#ffa500",
+        "CRITICAL": "#ff4b4b"
+    }[level]
+
+    st.markdown(
+        f"""
+        <div style="
+            background:#111;
+            padding:14px;
+            border-radius:12px;
+            margin-bottom:10px;
+            border-left:6px solid {color};
+        ">
+            <div style="opacity:0.8">{time}</div>
+            <div style="font-size:16px;font-weight:600">{subject}</div>
+            <div><b>{verdict}</b> ({percent}%)</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 
 # -----------------------------
@@ -149,15 +189,15 @@ if att_file:
 
             subject = SUBJECT_MAP.get(row["code"], row["code"])
             label = f"{row['time']} | {subject}"
-
+            
             if future_percent >= 80:
-                st.success(f"{label} → SAFE BUNK 😎 ({round(future_percent,2)}%)")
+                class_card(row["time"], subject, "SAFE BUNK 😎", future_percent, "SAFE")
             elif future_percent >= 75:
-                st.warning(f"{label} → RISKY ⚠️ ({round(future_percent,2)}%)")
+                class_card(row["time"], subject, "RISKY ⚠️", future_percent, "RISKY")
             else:
-                st.error(f"{label} → MUST ATTEND ❌ ({round(future_percent,2)}%)")
-        
-    
+                class_card(row["time"], subject, "MUST ATTEND ❌", future_percent, "CRITICAL")
+
+                
     # -----------------------------
     # Priority Subject
     # -----------------------------
@@ -185,11 +225,13 @@ if att_file:
             required = (TARGET * delivered - attended) / (1 - TARGET)
             required_classes = max(0, math.ceil(required))
 
-            st.error(
-                f"🔥 {subject}\n\n"
-                f"Current Attendance: {round(percent, 2)}%\n"
-                f"Attend next {required_classes} classes continuously to reach 75%."
-            )
+            st.markdown(f"**{subject}**")
+            st.progress(min(percent / 75, 1))
+            st.caption(
+                f"{round(percent,2)}% attendance · "
+                f"Attend next {required_classes} classes to reach 75%"
+)
+
 
     # -----------------------------
     # Attendance Graph
@@ -209,8 +251,10 @@ if att_file:
             axis=1
         )
 
+        graph_df = graph_df.sort_values("percent")
         graph_df = graph_df.set_index("subject")["percent"]
         st.bar_chart(graph_df)
+
 
     # -----------------------------
     # SMART BUNK VERDICT (WEEKLY)
@@ -250,24 +294,34 @@ if att_file:
     weekly = group_weekly(verdicts)
     
     # -----------------------------
-    # DAY SELECTOR
+    # DAY SELECTOR (SEMESTER-AWARE)
     # -----------------------------
-    DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri"]
-    selected_day = st.selectbox("📅 Select Day", DAY_ORDER)
 
-    if selected_day not in weekly:
+    # Order we want to respect
+    DAY_SEQUENCE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+
+    # Days that actually exist in the semester timetable
+    available_days = sorted(
+        timetable["day"].unique(),
+        key=lambda d: DAY_SEQUENCE.index(d)
+    )
+
+    selected_day = st.selectbox(
+        "📅 Select Day",
+        available_days
+    )
+
+    if selected_day not in weekly or not weekly[selected_day]:
         st.info("No classes scheduled for this day 🎉")
     else:
         for v in weekly[selected_day]:
-            msg = (
-                f"{v['time']} | {v['subject']} → {v['status']} | "
-                f"Budget: {v['budget']} | {v['warn']}"
+            icon = "🟢" if "BUNK" in v["status"] else "🔴"
+
+            st.markdown(
+                f"{icon} **{v['time']}** — {v['subject']}  \n"
+                f"Budget: {v['budget']} · {v['warn']}"
             )
 
-            if "BUNK" in v["status"]:
-                st.success(msg)
-            else:
-                st.error(msg)
 
     # -----------------------------
     # Future Prediction
@@ -286,7 +340,7 @@ if att_file:
 
         future = predict(attended, semester_total, weeks, 5)
 
-        st.write(f"{subject} → {round(future, 2)}%")
+        st.markdown(f"**{subject}** → {round(future, 2)}%")
 
     # -----------------------------
     # Classes Needed to Reach 75%
@@ -295,6 +349,7 @@ if att_file:
     st.subheader("📈 Classes Needed to Reach 75% Attendance")
 
     TARGET = 0.75
+    rows = []
 
     for _, row in att.iterrows():
         code = row["code"]
@@ -305,22 +360,23 @@ if att_file:
 
         # ✅ Subject not yet started
         if delivered == 0:
-            st.info(f"{subject} → Subject not yet started ⏳")
+            rows.append([subject, "⏳ Not started"])
             continue
 
-        # ✅ Already above 75%
-        current_percent = attended / delivered
-        if current_percent >= TARGET:
-            st.success(f"{subject} → Already above 75% 😎")
+        percent = attended / delivered
+        if percent >= TARGET:
+            rows.append([subject, "✅ Already above 75%"])
             continue
 
-        # ✅ Classes needed from NOW onward
         required = (TARGET * delivered - attended) / (1 - TARGET)
-        required_classes = max(0, math.ceil(required))
+        required_classes = math.ceil(required)
 
-        st.warning(
-            f"{subject} → Attend next {required_classes} classes continuously to reach 75%"
-)
+        rows.append([subject, f"📚 Attend next {required_classes} classes"])
+
+    df_needed = pd.DataFrame(rows, columns=["Subject", "Status"])
+
+    st.dataframe(df_needed, use_container_width=True, hide_index=True)
+
 
         # if required_classes == 0:
         #     st.success(f"{subject} → Already above 75% 😎")
@@ -332,8 +388,9 @@ if att_file:
     # -----------------------------
     # Subject-wise Bunk Options
     # -----------------------------
-
     st.subheader("🎯 Subject-wise Bunking Options")
+
+    rows = []
 
     for _, row in att.iterrows():
         code = row["code"]
@@ -342,38 +399,38 @@ if att_file:
         attended = int(row["attended"])
         delivered = int(row["total"])  # ERP delivered till now
 
-        # ✅ Subject not yet started
+        # Subject not yet started
         if delivered == 0:
-            st.info(
-                f"{subject} → NOT STARTED YET ⏳\n"
-                f"No attendance data available"
-            )
+            rows.append({
+                "Subject": subject,
+                "Bunk Status": "⏳ Not started"
+            })
             continue
 
-        # Semester-aware total (for bunking decisions)
+        # Semester-aware total (correct for bunking)
         semester_total = get_subject_total_classes(code, timetable)
 
-        percent = round((attended / semester_total) * 100, 2) if semester_total > 0 else 0.0
+        percent = (
+            (attended / semester_total) * 100
+            if semester_total > 0 else 0.0
+        )
 
-
-        if total == 0:
-            st.info(
-                f"{subject} → NOT STARTED YET ⏳\n"
-                f"No attendance data available"
-            )
-        elif percent >= 80:
-            st.success(
-                f"{subject} → SAFE TO BUNK 😎\n"
-                f"Buffer: {round(percent - 75, 2)}%"
-            )
+        if percent >= 80:
+            status = "🟢 Safe to bunk"
         elif percent >= 75:
-            st.warning(
-                f"{subject} → LIMITED BUNK ⚠️\n"
-                f"Buffer: {round(percent - 75, 2)}% (1–2 classes max)"
-            )
+            status = "🟠 Limited bunk"
         else:
-            st.error(
-                f"{subject} → NO BUNK ❌\n"
-                f"Below 75% by {round(75 - percent, 2)}%"
-            ) 
-            
+            status = "🔴 No bunk"
+
+        rows.append({
+            "Subject": subject,
+            "Bunk Status": status
+        })
+
+    df_bunk = pd.DataFrame(rows)
+
+    st.dataframe(
+        df_bunk,
+        use_container_width=True,
+        hide_index=True
+    )
