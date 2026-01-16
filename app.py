@@ -339,7 +339,7 @@ if att_file:
         code = row["code"]
         subject = SUBJECT_MAP.get(code, code)
 
-        attended = int(row["attended"])``
+        attended = int(row["attended"])
         delivered = int(row["total"])  # ERP delivered till now
 
         # ✅ Subject not yet started
