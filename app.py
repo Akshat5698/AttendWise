@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import re
 import math
+import warnings
+
 
 from core.attendance_logic import bunk_allowed
 from core.budget import bunk_budget
@@ -12,7 +14,14 @@ from utils.pdf_reader import attendance_pdf_to_df
 from datetime import datetime
 from core.attendance_logic import get_subject_total_classes
 from PIL import Image
-import warnings
+from core.what_if import what_if
+from core.priority import compute_priority
+from core.forecast import forecast
+from core.health import attendance_health_score
+from core.daily_verdict import daily_verdict
+
+
+
 
 warnings.filterwarnings("ignore", message="Could not get FontBBox")
 
@@ -197,10 +206,185 @@ if att_file:
             else:
                 class_card(row["time"], subject, "MUST ATTEND ❌", future_percent, "CRITICAL")
 
-                
+    # -----------------------------
+    # What If Attendance
+    # -----------------------------
+
+    st.subheader("🔮 What-If Attendance Simulator")
+
+    subject = st.selectbox(
+        "Choose Subject",
+        att["code"].map(lambda x: SUBJECT_MAP.get(x, x)).unique()
+    )
+
+    row = att[att["code"].map(lambda x: SUBJECT_MAP.get(x, x)) == subject].iloc[0]
+
+    attended = int(row["attended"])
+    total = int(row["total"])
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        attend_more = st.number_input(
+            "Attend next classes",
+            min_value=0,
+            step=1
+        )
+
+    with col2:
+        bunk_more = st.number_input(
+            "Bunk next classes",
+            min_value=0,
+            step=1
+        )
+
+    result = what_if(attended, total, attend_more, bunk_more)
+
+    st.metric("Projected Attendance", f"{result['percent']}%")
+    st.write("Status:", result["status"])
+
+    if result["needed"] is not None and result["needed"] > 0:
+        st.warning(f"You must attend {result['needed']} consecutive classes to reach 75%")
+        
+    # -----------------------------
+    # Subject Priority Engine (Phase 2)
+    # -----------------------------
+    
+    st.subheader("🎯 Subject Priority Engine")
+    priority_rows = []
+
+    for _, row in att.iterrows():
+        code = row["code"]
+        subject = SUBJECT_MAP.get(code, code)
+
+        attended = int(row["attended"])
+        total = int(row["total"])
+
+        is_lab = "lab" in subject.lower()
+
+        info = compute_priority(attended, total, is_lab)
+
+        priority_rows.append({
+            "Subject": subject,
+            "Attendance %": info["percent"],
+            "Recovery Needed": (
+                "—" if info["needed"] is None else info["needed"]
+            ),
+            "Bunk Budget": info["bunk_budget"],
+            "Priority": info["priority"]
+        })
+
+    df_priority = pd.DataFrame(priority_rows)
+    def highlight_priority(row):
+        if row["Priority"] == "Must Attend":
+            return ["background-color: #3b0a0a"] * len(row)
+        if row["Priority"] == "Bunkable":
+            return ["background-color: #0a3b1a"] * len(row)
+        return [""] * len(row)
+
+    st.dataframe(
+        df_priority.style.apply(highlight_priority, axis=1),
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # -----------------------------
+    # Attendance Forecast Graph (Phase 3)
+    # -----------------------------
+
+    from core.forecast import forecast
+
+    st.subheader("📈 Attendance Forecast")
+
+    subject = st.selectbox(
+        "Select subject for forecast",
+        df_priority["Subject"].unique(),
+        key="forecast_subject"
+    )
+
+    # Get subject code
+    row_att = att[att["code"].map(lambda x: SUBJECT_MAP.get(x, x)) == subject].iloc[0]
+    row_code = row_att["code"]
+
+    attended = int(row_att["attended"])
+    conducted = int(row_att["total"])
+
+    # Semester-aware total classes
+    semester_total = get_subject_total_classes(
+        row_code,
+        timetable
+    )
+
+    remaining_classes = max(0, semester_total - conducted)
+
+    if remaining_classes == 0:
+        st.info("No future classes left for this subject 📭")
+    else:
+        steps = st.slider(
+            "Future classes to simulate",
+            min_value=1,
+            max_value=remaining_classes,
+            value=min(15, remaining_classes)
+        )
+
+        data = forecast(attended, conducted, steps)
+
+        chart_df = pd.DataFrame({
+            "Attend All": data["attend_all"],
+            "Strategic": data["strategic"],
+            "Bunk All": data["bunk_all"]
+        })
+
+        st.line_chart(chart_df)
+        st.caption("⚠️ 75% attendance is the danger threshold")
+
+    # -----------------------------
+    # Attendance Health Score (Phase 4)
+    # -----------------------------
+
+
+    st.subheader("🩺 Attendance Health Score")
+
+    health = attendance_health_score(df_priority)
+
+    if health >= 85:
+        st.success(f"Health Score: {health}/100 — You’re chilling 😌")
+    elif health >= 70:
+        st.warning(f"Health Score: {health}/100 — Stay sharp ⚠️")
+    elif health >= 50:
+        st.error(f"Health Score: {health}/100 — Dangerous territory 🚨")
+    else:
+        st.error(f"Health Score: {health}/100 — Academic distress 💀")
+
+    # -----------------------------
+    # Daily Attendance Verdict (Phase 5)
+    # -----------------------------
+
+    st.subheader("🧭 Today’s Attendance Verdict")
+
+    today = datetime.now().strftime("%a")
+
+    today_subjects = [
+        SUBJECT_MAP.get(row["code"], row["code"])
+        for _, row in timetable[timetable["day"] == today].iterrows()
+    ]
+
+    verdict = daily_verdict(today_subjects, df_priority, health)
+
+    if "NOT SAFE" in verdict["status"]:
+        st.error(verdict["status"])
+    elif "RISKY" in verdict["status"]:
+        st.warning(verdict["status"])
+    else:
+        st.success(verdict["status"])
+
+    st.caption(verdict["reason"])
+
+
     # -----------------------------
     # Priority Subject
     # -----------------------------
+
 
     st.subheader("🚨 Priority Subjects (Needs Immediate Attention)")
 
@@ -230,207 +414,5 @@ if att_file:
             st.caption(
                 f"{round(percent,2)}% attendance · "
                 f"Attend next {required_classes} classes to reach 75%"
-)
-
-
-    # -----------------------------
-    # Attendance Graph
-    # -----------------------------
-
-        st.subheader("📊 Attendance Graph")
-
-        graph_df = att.copy()
-
-        graph_df["subject"] = graph_df["code"].map(lambda x: SUBJECT_MAP.get(x, x))
-
-        # ERP-correct current attendance percentage
-        graph_df["percent"] = graph_df.apply(
-            lambda r: round(
-                (r["attended"] / r["total"]) * 100, 2
-            ) if r["total"] > 0 else 0.0,
-            axis=1
-        )
-
-        graph_df = graph_df.sort_values("percent")
-        graph_df = graph_df.set_index("subject")["percent"]
-        st.bar_chart(graph_df)
-
-
-    # -----------------------------
-    # SMART BUNK VERDICT (WEEKLY)
-    # -----------------------------
-
-    st.subheader("🧠 Smart Bunk Verdict")
-
-    verdicts = []
-
-    for _, row in timetable.iterrows():
-        record = att[att["code"] == row["code"]]
-        if record.empty:
-            continue
-        
-        code = row["code"]
-        subject = SUBJECT_MAP.get(code, code)
-
-        attended = int(record["attended"].values[0])
-
-        # Semester-aware total (correct for bunk decisions)
-        total = get_subject_total_classes(code, timetable)
-
-        # Current semester-level percentage (projection baseline)
-        percent = round((attended / total) * 100, 2) if total > 0 else 0.0
-
-
-
-        verdicts.append({
-            "day": row["day"],
-            "time": row["time"],
-            "subject": SUBJECT_MAP.get(row["code"], row["code"]),
-            "status": "BUNK 😎" if bunk_allowed(attended, total) else "ATTEND 💀",
-            "budget": bunk_budget(attended, total),
-            "warn": warning(percent)
-        })
-
-    weekly = group_weekly(verdicts)
-    
-    # -----------------------------
-    # DAY SELECTOR (SEMESTER-AWARE)
-    # -----------------------------
-
-    # Order we want to respect
-    DAY_SEQUENCE = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
-
-    # Days that actually exist in the semester timetable
-    available_days = sorted(
-        timetable["day"].unique(),
-        key=lambda d: DAY_SEQUENCE.index(d)
-    )
-
-    selected_day = st.selectbox(
-        "📅 Select Day",
-        available_days
-    )
-
-    if selected_day not in weekly or not weekly[selected_day]:
-        st.info("No classes scheduled for this day 🎉")
-    else:
-        for v in weekly[selected_day]:
-            icon = "🟢" if "BUNK" in v["status"] else "🔴"
-
-            st.markdown(
-                f"{icon} **{v['time']}** — {v['subject']}  \n"
-                f"Budget: {v['budget']} · {v['warn']}"
             )
 
-
-    # -----------------------------
-    # Future Prediction
-    # -----------------------------
-
-    st.subheader("🔮 Future Attendance Prediction")
-    weeks = st.slider("Weeks Ahead", 1, 12)
-
-    for _, row in att.iterrows():
-        code = row["code"]
-        subject = SUBJECT_MAP.get(code, code)
-
-        attended = int(row["attended"])
-
-        semester_total = get_subject_total_classes(code, timetable)
-
-        future = predict(attended, semester_total, weeks, 5)
-
-        st.markdown(f"**{subject}** → {round(future, 2)}%")
-
-    # -----------------------------
-    # Classes Needed to Reach 75%
-    # -----------------------------
-
-    st.subheader("📈 Classes Needed to Reach 75% Attendance")
-
-    TARGET = 0.75
-    rows = []
-
-    for _, row in att.iterrows():
-        code = row["code"]
-        subject = SUBJECT_MAP.get(code, code)
-
-        attended = int(row["attended"])
-        delivered = int(row["total"])  # ERP: classes delivered till now
-
-        # ✅ Subject not yet started
-        if delivered == 0:
-            rows.append([subject, "⏳ Not started"])
-            continue
-
-        percent = attended / delivered
-        if percent >= TARGET:
-            rows.append([subject, "✅ Already above 75%"])
-            continue
-
-        required = (TARGET * delivered - attended) / (1 - TARGET)
-        required_classes = math.ceil(required)
-
-        rows.append([subject, f"📚 Attend next {required_classes} classes"])
-
-    df_needed = pd.DataFrame(rows, columns=["Subject", "Status"])
-
-    st.dataframe(df_needed, use_container_width=True, hide_index=True)
-
-
-        # if required_classes == 0:
-        #     st.success(f"{subject} → Already above 75% 😎")
-        # else:
-        #     st.warning(
-        #         f"{subject} → Attend next {required_classes} classes continuously to reach 75%"
-        #     )
-            
-    # -----------------------------
-    # Subject-wise Bunk Options
-    # -----------------------------
-    st.subheader("🎯 Subject-wise Bunking Options")
-
-    rows = []
-
-    for _, row in att.iterrows():
-        code = row["code"]
-        subject = SUBJECT_MAP.get(code, code)
-
-        attended = int(row["attended"])
-        delivered = int(row["total"])  # ERP delivered till now
-
-        # Subject not yet started
-        if delivered == 0:
-            rows.append({
-                "Subject": subject,
-                "Bunk Status": "⏳ Not started"
-            })
-            continue
-
-        # Semester-aware total (correct for bunking)
-        semester_total = get_subject_total_classes(code, timetable)
-
-        percent = (
-            (attended / semester_total) * 100
-            if semester_total > 0 else 0.0
-        )
-
-        if percent >= 80:
-            status = "🟢 Safe to bunk"
-        elif percent >= 75:
-            status = "🟠 Limited bunk"
-        else:
-            status = "🔴 No bunk"
-
-        rows.append({
-            "Subject": subject,
-            "Bunk Status": status
-        })
-
-    df_bunk = pd.DataFrame(rows)
-
-    st.dataframe(
-        df_bunk,
-        use_container_width=True,
-        hide_index=True
-    )
