@@ -34,15 +34,119 @@ st.set_page_config(
     page_icon="😎",
     layout="wide"
 )
+st.markdown("""
+<style>
+.stApp {
+    background: radial-gradient(
+        circle at top left,
+        #1f2937,
+        #020617
+    );
+    color: white;
+}
+</style>
+""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+[data-testid="stHeader"],
+[data-testid="stToolbar"] {
+    background: transparent;
+}
 
-col1, col2 = st.columns([1, 6])
+.block-container {
+    padding-top: 1rem;
+}
+</style>
+""", unsafe_allow_html=True)
+st.markdown("""
+<style>
+/* Sidebar container */
+[data-testid="stSidebar"] {
+    background: linear-gradient(
+        180deg,
+        #020617,
+        #020617
+    );
+    border-right: 1px solid rgba(255,255,255,0.08);
+}
 
-with col1:
-    st.image("assets/logo.png", width=80)
+/* Sidebar content padding */
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 2rem;
+}
 
-with col2:
-    st.title("AttendWise")
-    st.caption("📅 Attendance adjusted for holidays & exams")
+/* Sidebar text */
+[data-testid="stSidebar"] * {
+    color: #e5e7eb;
+}
+
+/* Sidebar headings */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3 {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* Sidebar buttons */
+[data-testid="stSidebar"] button {
+    background-color: #1f2937;
+    color: white;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.2s ease-in-out;
+}
+
+[data-testid="stSidebar"] button:hover {
+    background-color: #374151;
+    border-color: rgba(255,255,255,0.2);
+}
+
+/* Selectbox / inputs */
+[data-testid="stSidebar"] select,
+[data-testid="stSidebar"] input {
+    background-color: #020617;
+    color: white;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* Divider lines */
+[data-testid="stSidebar"] hr {
+    border-color: rgba(255,255,255,0.1);
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+st.markdown("""
+<style>
+.header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding-top: 1.5rem;
+}
+.header-title h1 {
+    margin-bottom: 0.1rem;
+}
+.header-title p {
+    margin-top: 0;
+    opacity: 0.75;
+}
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="header">
+    <img src="assets/logo.png" width="80">
+    <div class="header-title">
+        <h1>AttendWise</h1>
+        <p>📅 Attendance adjusted for holidays & exams</p>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 
 
 # -----------------------------
