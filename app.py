@@ -19,6 +19,7 @@ from core.priority import compute_priority
 from core.forecast import forecast
 from core.health import attendance_health_score
 from core.daily_verdict import daily_verdict
+from core.forecast import forecast
 
 
 
@@ -249,9 +250,21 @@ if att_file:
     # -----------------------------
     # Subject Priority Engine (Phase 2)
     # -----------------------------
-    
+
     st.subheader("🎯 Subject Priority Engine")
+
     priority_rows = []
+
+    def classes_per_week(subject_code, timetable):
+        return timetable[timetable["code"] == subject_code].shape[0]
+
+    def friendly_status(priority):
+        return {
+            "Must Attend": "🚨 Critical",
+            "Attend Carefully": "⚠️ Watch",
+            "Bunkable": "😌 Safe",
+            "Not Started": "🟢 Not Started"
+        }.get(priority, priority)
 
     for _, row in att.iterrows():
         code = row["code"]
@@ -261,38 +274,79 @@ if att_file:
         total = int(row["total"])
 
         is_lab = "lab" in subject.lower()
-
         info = compute_priority(attended, total, is_lab)
+
+        # Days to recover (calendar-friendly)
+        if isinstance(info["needed"], int) and info["needed"] > 0:
+            weekly_classes = classes_per_week(code, timetable)
+            if weekly_classes > 0:
+                days_needed = math.ceil(info["needed"] / weekly_classes) * 7
+            else:
+                days_needed = "—"
+        else:
+            days_needed = "—"
+
+        # ✅ APPEND MUST BE INSIDE LOOP
+        # UI-friendly recovery text
+        recovery_classes_ui = (
+            f"Attend {info['needed']} classes"
+            if isinstance(info["needed"], int) and info["needed"] > 0
+            else "—"
+        )
+
+        recovery_days_ui = (
+            f"~{days_needed} days"
+            if isinstance(days_needed, int)
+            else "—"
+        )
 
         priority_rows.append({
             "Subject": subject,
-            "Attendance %": info["percent"],
-            "Recovery Needed": (
-                "—" if info["needed"] is None else info["needed"]
-            ),
+            "Attendance %": round(info["percent"], 2),
+
+            # internal logic
+            "Recovery Needed": info["needed"] if info["needed"] is not None else 0,
+
+            # UI
+            "Recovery (Classes)": recovery_classes_ui,
+            "Recovery (Days)": recovery_days_ui,
             "Bunk Budget": info["bunk_budget"],
-            "Priority": info["priority"]
+            "Priority": info["priority"],
+            "Status": friendly_status(info["priority"])
         })
 
+    # Build dataframe
     df_priority = pd.DataFrame(priority_rows)
-    def highlight_priority(row):
-        if row["Priority"] == "Must Attend":
+
+    # 🔒 Freeze full dataframe for other phases
+    df_priority_full = df_priority.copy()
+
+    # Softer, clearer highlighting
+    def highlight_rows(row):
+        if "Critical" in row["Status"]:
             return ["background-color: #3b0a0a"] * len(row)
-        if row["Priority"] == "Bunkable":
+        if "Watch" in row["Status"]:
+            return ["background-color: #3b2f0a"] * len(row)
+        if "Safe" in row["Status"]:
             return ["background-color: #0a3b1a"] * len(row)
         return [""] * len(row)
 
+    # Hide internal columns from UI
+    display_df = df_priority_full.drop(
+        columns=["Priority", "Recovery Needed"]
+    )
+
     st.dataframe(
-        df_priority.style.apply(highlight_priority, axis=1),
+        display_df.style.apply(highlight_rows, axis=1),
         use_container_width=True,
         hide_index=True
     )
-    
+
+
+
     # -----------------------------
     # Attendance Forecast Graph (Phase 3)
     # -----------------------------
-
-    from core.forecast import forecast
 
     st.subheader("📈 Attendance Forecast")
 
@@ -357,7 +411,7 @@ if att_file:
         st.error(f"Health Score: {health}/100 — Academic distress 💀")
 
     # -----------------------------
-    # Daily Attendance Verdict (Phase 5)
+    # Today's Attendance Verdict (Phase 5)
     # -----------------------------
 
     st.subheader("🧭 Today’s Attendance Verdict")
@@ -369,16 +423,23 @@ if att_file:
         for _, row in timetable[timetable["day"] == today].iterrows()
     ]
 
-    verdict = daily_verdict(today_subjects, df_priority, health)
-
-    if "NOT SAFE" in verdict["status"]:
-        st.error(verdict["status"])
-    elif "RISKY" in verdict["status"]:
-        st.warning(verdict["status"])
+    if not today_subjects:
+        st.success("🟢 No classes today")
+        st.caption("Enjoy your free day. No attendance decisions required.")
+        verdict = None
     else:
-        st.success(verdict["status"])
+        verdict = daily_verdict(today_subjects, df_priority_full, health)
 
-    st.caption(verdict["reason"])
+    if verdict:
+        if "NOT SAFE" in verdict["status"]:
+            st.error("❌ Not safe to bunk today")
+            st.caption(verdict["reason"])
+        elif "RISKY" in verdict["status"]:
+            st.warning("⚠️ Risky to bunk today")
+            st.caption(verdict["reason"])
+        else:
+            st.success("✅ Safe to bunk today")
+            st.caption(verdict["reason"])
 
 
     # -----------------------------
@@ -386,33 +447,36 @@ if att_file:
     # -----------------------------
 
 
-    st.subheader("🚨 Priority Subjects (Needs Immediate Attention)")
+    st.divider()
+
+    # -----------------------------
+    # Priority Subjects
+    # -----------------------------
+
+    st.subheader("🚨 Priority Subjects")
 
     TARGET = 0.75
-
     low_attendance = att[(att["total"] > 0) & (att["percent"] < 75)]
 
     if low_attendance.empty:
-        st.success("All subjects are above 75%. Rare W 🏆")
+        st.success("🎉 All subjects are above 75%. You're safe for now.")
     else:
         for _, row in low_attendance.sort_values("percent").iterrows():
             code = row["code"]
             subject = SUBJECT_MAP.get(code, code)
 
             attended = int(row["attended"])
-            delivered = int(row["total"])  # ERP: Eligible Delivered till now
+            delivered = int(row["total"])
 
-            # Current attendance (ERP-correct)
-            percent = round((attended / delivered) * 100, 2) if delivered > 0 else 0.0
+            percent = round((attended / delivered) * 100, 2)
 
-            # Classes needed from THIS POINT onward to reach 75%
             required = (TARGET * delivered - attended) / (1 - TARGET)
             required_classes = max(0, math.ceil(required))
 
-            st.markdown(f"**{subject}**")
-            st.progress(min(percent / 75, 1))
-            st.caption(
-                f"{round(percent,2)}% attendance · "
-                f"Attend next {required_classes} classes to reach 75%"
-            )
+            with st.container(border=True):
+                st.markdown(f"### {subject}")
+                st.progress(min(percent / 75, 1))
+                st.caption(f"📉 Current: **{percent}%** · 📚 Attend **{required_classes} classes** to reach 75%")
+
+
 
