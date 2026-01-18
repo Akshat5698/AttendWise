@@ -1,4 +1,7 @@
 streamlit
 pandas
+numpy
 matplotlib
-openpyxl
+scikit-learn
+PyPDF2
+pdfplumber
