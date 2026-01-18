@@ -731,14 +731,9 @@ if att_file:
     # -----------------------------
     # Priority Subject
     # -----------------------------
-
-
+    
     st.divider()
-
-    # -----------------------------
-    # Priority Subjects
-    # -----------------------------
-
+    
     st.subheader("🚨 Priority Subjects")
 
     TARGET = 0.75
