@@ -21,19 +21,40 @@ from core.health import attendance_health_score
 from core.daily_verdict import daily_verdict
 from core.forecast import forecast
 
+st.markdown("""
+<style>
+/* Force Streamlit main container to behave */
+.block-container {
+    padding-top: 0rem !important;
+    margin-top: 0rem !important;
+    min-height: 100vh;
+}
+</style>
+""", unsafe_allow_html=True)
 
 
+if "setup_done" not in st.session_state:
+    st.session_state.setup_done = False
 
-warnings.filterwarnings("ignore", message="Could not get FontBBox")
+if "attendance_file" not in st.session_state:
+    st.session_state.attendance_file = None
 
-logo = Image.open("assets/logo.png")
-st.image(logo, width=80)
+if "group" not in st.session_state:
+    st.session_state.group = None
+
 
 st.set_page_config(
     page_title="AttendWise",
     page_icon="😎",
     layout="wide"
 )
+
+warnings.filterwarnings("ignore", message="Could not get FontBBox")
+
+logo = Image.open("assets/logo.png")
+st.image(logo, width=80)
+
+# Global CSS
 st.markdown("""
 <style>
 .stApp {
@@ -58,6 +79,148 @@ st.markdown("""
 }
 </style>
 """, unsafe_allow_html=True)
+
+# -----------------------------
+# PERMANENT TIMETABLE LOADER
+# -----------------------------
+
+@st.cache_data
+def load_timetables():
+    return {
+        "Group A": pd.read_excel("data/timetable_group_A.xlsx", engine="openpyxl"),
+        "Group B": pd.read_excel("data/timetable_group_B.xlsx", engine="openpyxl")
+    }
+
+# -----------------------------
+# Helpers
+# -----------------------------
+
+def extract_course_code(text):
+    if pd.isna(text):
+        return None
+    match = re.match(r"(25[A-Z]{3}-\d+)", str(text))
+    return match.group(1) if match else None
+
+def class_card(time, subject, verdict, percent, level):
+    color = {
+        "SAFE": "#2ecc71",
+        "RISKY": "#ffa500",
+        "CRITICAL": "#ff4b4b"
+    }[level]
+
+    st.markdown(
+        f"""
+        <div style="
+            background:#111;
+            padding:14px;
+            border-radius:12px;
+            margin-bottom:10px;
+            border-left:6px solid {color};
+        ">
+            <div style="opacity:0.8">{time}</div>
+            <div style="font-size:16px;font-weight:600">{subject}</div>
+            <div><b>{verdict}</b> ({percent}%)</div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+def setup_screen():
+    # Hide sidebar + header during setup
+    st.markdown("""
+    <style>
+    [data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Vertical spacing
+    st.write("")
+    st.write("")
+    st.write("")
+
+    # Centered layout using columns (THIS WORKS)
+    col_left, col_center, col_right = st.columns([2, 3, 2])
+
+    with col_center:
+        st.markdown("""
+        <div style="
+            background: rgba(255,255,255,0.06);
+            padding: 2rem;
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.12);
+        ">
+            <h2>👋 Welcome to AttendWise</h2>
+            <p style="opacity:0.75;">Let’s set things up.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        attendance_file = st.file_uploader(
+            "Upload attendance PDF",
+            type=["pdf"]
+        )
+
+        group = st.selectbox(
+            "Select group",
+            ["Group A", "Group B"]
+        )
+
+        if st.button("Continue →", use_container_width=True):
+            if attendance_file is None:
+                st.warning("Upload attendance file first")
+            else:
+                st.session_state.attendance_file = attendance_file
+                st.session_state.group = group
+                st.session_state.setup_done = True
+                st.rerun()
+
+
+
+if not st.session_state.setup_done:
+    setup_screen()
+    st.stop()
+    
+group = st.session_state.group
+att_file = st.session_state.attendance_file
+timetables = load_timetables()
+
+with st.sidebar:
+        st.markdown("## ⚙️ Configuration")
+        st.caption(f"Group: **{group}**")
+        st.divider()
+
+        timetable_source = st.radio(
+            "Timetable source",
+            ["Use default", "Upload timetable"],
+            horizontal=True
+        )
+
+        if timetable_source == "Upload timetable":
+            timetable_file = st.file_uploader(
+                "Upload timetable (.xlsx)",
+                type=["xlsx"]
+            )
+
+            if timetable_file:
+                timetable = pd.read_excel(timetable_file, engine="openpyxl")
+            else:
+                st.warning("Upload a timetable file to continue.")
+                st.stop()
+        else:
+            timetable = timetables[group]
+
+        st.divider()
+
+        if st.button("🔁 Change setup"):
+            st.session_state.setup_done = False
+            st.rerun()
+
+
+# DASHBOARD-ONLY STYLES
+
 st.markdown("""
 <style>
 /* Sidebar container */
@@ -118,7 +281,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-
 st.markdown("""
 <style>
 .header {
@@ -146,73 +308,6 @@ st.markdown("""
     </div>
 </div>
 """, unsafe_allow_html=True)
-
-
-
-# -----------------------------
-# PERMANENT TIMETABLE LOADER
-# -----------------------------
-
-@st.cache_data
-def load_timetables():
-    return {
-        "Group A": pd.read_excel("data/timetable_group_A.xlsx", engine="openpyxl"),
-        "Group B": pd.read_excel("data/timetable_group_B.xlsx", engine="openpyxl")
-    }
-
-
-timetables = load_timetables()
-
-with st.sidebar:
-    st.header("🎓 Setup")
-
-    group = st.selectbox(
-        "Select Group",
-        ["Group A", "Group B"]
-    )
-# -----------------------------
-# ATTENDANCE UPLOAD
-# -----------------------------
-
-att_file = st.file_uploader(
-        "Upload Attendance (.xlsx or PDF)",
-        type=["xlsx", "pdf"]
-    )
-
-# -----------------------------
-# Helpers
-# -----------------------------
-
-def extract_course_code(text):
-    if pd.isna(text):
-        return None
-    match = re.match(r"(25[A-Z]{3}-\d+)", str(text))
-    return match.group(1) if match else None
-
-def class_card(time, subject, verdict, percent, level):
-    color = {
-        "SAFE": "#2ecc71",
-        "RISKY": "#ffa500",
-        "CRITICAL": "#ff4b4b"
-    }[level]
-
-    st.markdown(
-        f"""
-        <div style="
-            background:#111;
-            padding:14px;
-            border-radius:12px;
-            margin-bottom:10px;
-            border-left:6px solid {color};
-        ">
-            <div style="opacity:0.8">{time}</div>
-            <div style="font-size:16px;font-weight:600">{subject}</div>
-            <div><b>{verdict}</b> ({percent}%)</div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-
 
 # -----------------------------
 # MAIN LOGIC
@@ -381,16 +476,13 @@ if att_file:
         info = compute_priority(attended, total, is_lab)
 
         # Days to recover (calendar-friendly)
+        days_needed = None
         if isinstance(info["needed"], int) and info["needed"] > 0:
             weekly_classes = classes_per_week(code, timetable)
             if weekly_classes > 0:
                 days_needed = math.ceil(info["needed"] / weekly_classes) * 7
-            else:
-                days_needed = "—"
-        else:
-            days_needed = "—"
 
-        # ✅ APPEND MUST BE INSIDE LOOP
+
         # UI-friendly recovery text
         recovery_classes_ui = (
             f"Attend {info['needed']} classes"
@@ -409,18 +501,28 @@ if att_file:
             "Attendance %": round(info["percent"], 2),
 
             # internal logic
-            "Recovery Needed": info["needed"] if info["needed"] is not None else 0,
-
+            "Recovery Needed": info["needed"],
+            
             # UI
             "Recovery (Classes)": recovery_classes_ui,
             "Recovery (Days)": recovery_days_ui,
-            "Bunk Budget": info["bunk_budget"],
+            "Bunk Budget": (
+                info["bunk_budget"]
+                if isinstance(info["bunk_budget"], int)
+                else None
+            ),
             "Priority": info["priority"],
             "Status": friendly_status(info["priority"])
         })
 
     # Build dataframe
     df_priority = pd.DataFrame(priority_rows)
+    # UI-only formatting for Bunk Budget
+    df_priority["Bunk Budget (UI)"] = df_priority["Bunk Budget"].apply(
+    lambda x: "∞" if pd.isna(x) else int(x)
+    )
+
+
 
     # 🔒 Freeze full dataframe for other phases
     df_priority_full = df_priority.copy()
@@ -437,8 +539,11 @@ if att_file:
 
     # Hide internal columns from UI
     display_df = df_priority_full.drop(
-        columns=["Priority", "Recovery Needed"]
+        columns=["Priority", "Recovery Needed", "Bunk Budget","Bunk Budget (UI)"]
     )
+
+    display_df["Bunk Budget"] = df_priority_full["Bunk Budget (UI)"]
+
 
     st.dataframe(
         display_df.style.apply(highlight_rows, axis=1),
