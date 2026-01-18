@@ -90,6 +90,12 @@ def load_timetables():
         "Group A": pd.read_excel("data/timetable_group_A.xlsx", engine="openpyxl"),
         "Group B": pd.read_excel("data/timetable_group_B.xlsx", engine="openpyxl")
     }
+@st.cache_data
+def load_saturday_calendar():
+    df = pd.read_csv("data/saturday_teaching_days.csv")
+    df["Date"] = pd.to_datetime(df["Date"])
+    return df
+
 
 # -----------------------------
 # Helpers
@@ -124,6 +130,40 @@ def class_card(time, subject, verdict, percent, level):
         """,
         unsafe_allow_html=True
     )
+    
+DAY_MAP = {
+    "Monday": "Mon",
+    "Tuesday": "Tue",
+    "Wednesday": "Wed",
+    "Thursday": "Thu",
+    "Friday": "Fri"
+}
+
+def saturday_classes_for_subject(subject_code, timetable, sat_calendar):
+    count = 0
+
+    for _, row in sat_calendar.iterrows():
+        followed = row["Timetable Followed"]
+
+        # Skip test-only Saturdays
+        if "Test" in followed:
+            continue
+
+        weekday = followed.split()[0]   # "Monday"
+        day_code = DAY_MAP.get(weekday)
+
+        if not day_code:
+            continue
+
+        # If subject appears on that weekday, it gets a class
+        if not timetable[
+            (timetable["day"] == day_code) &
+            (timetable["code"] == subject_code)
+        ].empty:
+            count += 1
+
+    return count
+
 
 def setup_screen():
     # Hide sidebar + header during setup
@@ -186,6 +226,8 @@ if not st.session_state.setup_done:
 group = st.session_state.group
 att_file = st.session_state.attendance_file
 timetables = load_timetables()
+sat_calendar = load_saturday_calendar()
+
 
 with st.sidebar:
         st.markdown("## ⚙️ Configuration")
@@ -475,12 +517,27 @@ if att_file:
         is_lab = "lab" in subject.lower()
         info = compute_priority(attended, total, is_lab)
 
-        # Days to recover (calendar-friendly)
-        days_needed = None
+        # Days to recover (semester-calendar aware, includes Saturdays)
         if isinstance(info["needed"], int) and info["needed"] > 0:
+
             weekly_classes = classes_per_week(code, timetable)
-            if weekly_classes > 0:
-                days_needed = math.ceil(info["needed"] / weekly_classes) * 7
+
+            extra_saturday_classes = saturday_classes_for_subject(
+                code,
+                timetable,
+                sat_calendar
+            )
+
+            total_classes_available = weekly_classes + extra_saturday_classes
+
+            if total_classes_available > 0:
+                weeks_needed = math.ceil(info["needed"] / total_classes_available)
+                days_needed = weeks_needed * 7
+            else:
+                days_needed = "—"
+
+        else:
+            days_needed = "—"
 
 
         # UI-friendly recovery text
