@@ -1,32 +1,28 @@
-def attendance_health_score(priority_df):
-    subjects = len(priority_df)
-    if subjects == 0:
-        return 100
+def compute_health_score(attendance_df):
+    scores = []
 
-    score = 100
+    for _, row in attendance_df.iterrows():
+        total = row["total"]
+        attended = row["attended"]
 
-    must_attend = 0
-    avg_percent = priority_df["Attendance %"].mean()
+        if total == 0:
+            continue  # subject not started, do not punish
 
-    # 1. Average attendance penalty (bounded)
-    if avg_percent < 75:
-        score -= min(30, (75 - avg_percent) * 1.2)
+        percent = (attended / total) * 100
 
-    # 2. Priority-based penalties (capped)
-    for _, row in priority_df.iterrows():
-        if row["Priority"] == "Must Attend":
-            must_attend += 1
+        if percent >= 85:
+            score = 100
+        elif percent >= 75:
+            score = 80
+        elif percent >= 65:
+            score = 55
+        else:
+            score = 30
 
-    score -= min(30, must_attend * 10)
+        scores.append(score)
 
-    # 3. Recovery pressure (soft)
-    recovery_vals = [
-        r for r in priority_df["Recovery Needed"]
-        if isinstance(r, int) and r > 0
-    ]
+    if not scores:
+        return 100  # semester just started, calm down
 
-    if recovery_vals:
-        avg_recovery = sum(recovery_vals) / len(recovery_vals)
-        score -= min(25, avg_recovery * 3)
+    return round(sum(scores) / len(scores))
 
-    return max(0, round(score))
