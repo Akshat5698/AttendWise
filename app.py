@@ -21,6 +21,11 @@ from core.health import attendance_health_score
 from core.daily_verdict import daily_verdict
 from core.forecast import forecast
 
+# NOTE:
+# Internal columns must NEVER be rendered directly.
+# Always display `display_df`, not df_priority or df_priority_full.
+
+
 st.markdown("""
 <style>
 /* Force Streamlit main container to behave */
@@ -35,6 +40,7 @@ st.markdown("""
 
 if "setup_done" not in st.session_state:
     st.session_state.setup_done = False
+
 
 if "attendance_file" not in st.session_state:
     st.session_state.attendance_file = None
@@ -222,6 +228,8 @@ def setup_screen():
 if not st.session_state.setup_done:
     setup_screen()
     st.stop()
+
+st.toast("Setup loaded from session", icon="✅")
     
 group = st.session_state.group
 att_file = st.session_state.attendance_file
@@ -493,7 +501,10 @@ if att_file:
     # -----------------------------
 
     st.subheader("🎯 Subject Priority Engine")
-
+    st.caption(
+    "🛈 Recovery days are estimated using the official semester calendar "
+    "(including extra Saturday teaching days). Actual dates may vary."
+)
     priority_rows = []
 
     def classes_per_week(subject_code, timetable):
@@ -600,14 +611,23 @@ if att_file:
     )
 
     display_df["Bunk Budget"] = df_priority_full["Bunk Budget (UI)"]
-
+    
+    cols = display_df.columns.tolist()
+    cols.insert(cols.index("Status") + 1, cols.pop(cols.index("Bunk Budget")))
+    display_df = display_df[cols]
 
     st.dataframe(
         display_df.style.apply(highlight_rows, axis=1),
         use_container_width=True,
         hide_index=True
     )
-
+    
+    st.download_button(
+    "⬇️ Download Priority Report (CSV)",
+    display_df.to_csv(index=False),
+    file_name="attendance_priority_report.csv",
+    mime="text/csv"
+)
 
 
     # -----------------------------
