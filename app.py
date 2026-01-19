@@ -27,16 +27,6 @@ from core.forecast import forecast
 
 st.markdown("""
 <style>
-.main {
-    padding-bottom: 120px;
-}
-</style>
-""", unsafe_allow_html=True)
-
-
-
-st.markdown("""
-<style>
 /* Force Streamlit main container to behave */
 .block-container {
     padding-top: 0rem !important;
@@ -776,27 +766,22 @@ if att_file:
 # -----------------------------
 
 st.markdown("""
-    <style>
-    .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: #020617; /* Matches your sidebar color */
-        color: rgba(255, 255, 255, 0.5); /* Semi-transparent white */
-        text-align: center;
-        padding: 10px;
-        font-size: 14px;
-        z-index: 100;
-        border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    /* Add padding to body so footer doesn't cover content */
-    .block-container {
-        padding-bottom: 3rem; 
-    }
-    </style>
-    
-    <div class="footer">
-        <p>&copy; 2026 Akshat N & Akshat D. All rights reserved.</p>
-    </div>
-    """, unsafe_allow_html=True)
+<style>
+.footer {
+    position: relative;
+    width: 100%;
+    margin-top: 4rem;
+    padding: 20px 0;
+    background-color: #020617;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    font-size: 14px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+</style>
+
+<div class="footer">
+    <p>&copy; 2026 Akshat N & Akshat D. All rights reserved.</p>
+</div>
+""", unsafe_allow_html=True)
+
