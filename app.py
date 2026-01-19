@@ -25,6 +25,15 @@ from core.forecast import forecast
 # Internal columns must NEVER be rendered directly.
 # Always display `display_df`, not df_priority or df_priority_full.
 
+st.markdown("""
+<style>
+.main {
+    padding-bottom: 120px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
 
 st.markdown("""
 <style>
@@ -501,10 +510,9 @@ if att_file:
     # -----------------------------
 
     st.subheader("🎯 Subject Priority Engine")
-    st.caption(
-    "🛈 Recovery days are estimated using the official semester calendar "
-    "(including extra Saturday teaching days). Actual dates may vary."
-)
+    st.caption("🛈 Recovery days are estimated using the official semester calendar "
+    "(including extra Saturday teaching days). Actual dates may vary.")
+    
     priority_rows = []
 
     def classes_per_week(subject_code, timetable):
