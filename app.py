@@ -93,8 +93,8 @@ st.markdown("""
 @st.cache_data
 def load_timetables():
     return {
-        "Group A": pd.read_excel("data/timetable_group_A.xlsx", engine="openpyxl"),
-        "Group B": pd.read_excel("data/timetable_group_B.xlsx", engine="openpyxl")
+        "Group A": pd.read_excel("data/timetable_group_A.xlsx"),
+        "Group B": pd.read_excel("data/timetable_group_B.xlsx",)
     }
 @st.cache_data
 def load_saturday_calendar():
