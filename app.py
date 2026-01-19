@@ -767,5 +767,36 @@ if att_file:
                 st.progress(min(percent / 75, 1))
                 st.caption(f"📉 Current: **{percent}%** · 📚 Attend **{required_classes} classes** to reach 75%")
 
+#-----------------------
+#    Copyright
+#-----------------------
 
+# -----------------------------
+# Footer / Copyright
+# -----------------------------
 
+st.markdown("""
+    <style>
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #020617; /* Matches your sidebar color */
+        color: rgba(255, 255, 255, 0.5); /* Semi-transparent white */
+        text-align: center;
+        padding: 10px;
+        font-size: 14px;
+        z-index: 100;
+        border-top: 1px solid rgba(255,255,255,0.1);
+    }
+    /* Add padding to body so footer doesn't cover content */
+    .block-container {
+        padding-bottom: 3rem; 
+    }
+    </style>
+    
+    <div class="footer">
+        <p>&copy; 2026 Akshat N & Akshat D. All rights reserved.</p>
+    </div>
+    """, unsafe_allow_html=True)
