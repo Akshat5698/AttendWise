@@ -3,7 +3,7 @@ import pandas as pd
 import re
 import math
 import warnings
-
+import pytz
 
 from core.attendance_logic import bunk_allowed
 from core.budget import bunk_budget
@@ -20,10 +20,27 @@ from core.forecast import forecast
 from core.health import attendance_health_score
 from core.daily_verdict import daily_verdict
 from core.forecast import forecast
+from datetime import datetime, timedelta
+from collections import defaultdict
 
 # NOTE:
 # Internal columns must NEVER be rendered directly.
 # Always display `display_df`, not df_priority or df_priority_full.
+
+
+
+# Use local timezone
+IST = pytz.timezone("Asia/Kolkata")
+now = datetime.now(IST)
+
+# Cutoff time: 4:35 PM
+cutoff_time = now.replace(hour=16, minute=35, second=0, microsecond=0)
+
+# Decide effective day
+if now >= cutoff_time:
+    effective_date = now.date() + timedelta(days=1)
+else:
+    effective_date = now.date()
 
 st.markdown("""
 <style>
@@ -415,45 +432,67 @@ if att_file:
 
     timetable = pd.DataFrame(schedule)
 
+
     # -----------------------------
     # Today's Smart Bunk Plan
     # -----------------------------
 
     st.subheader("🔥 Today's Smart Bunk Plan")
 
-    today = datetime.now().strftime("%a")
+    today = effective_date.strftime("%a")
     today_rows = timetable[timetable["day"] == today]
 
+    # Tracks how many classes of each subject are bunked today
+    bunk_counter = defaultdict(int)
+
     if today_rows.empty:
-        st.info("No classes scheduled for today 🎉")
+        st.info("No classes scheduled 🎉")
     else:
         for _, row in today_rows.iterrows():
-            record = att[att["code"] == row["code"]]
-
-            if record.empty:
-                continue
-
             code = row["code"]
             subject = SUBJECT_MAP.get(code, code)
 
+            record = att[att["code"] == code]
+            if record.empty:
+                continue
+
             attended = int(record["attended"].values[0])
-            delivered = int(record["total"].values[0])  # ERP Eligible Delivered (till now)
+            delivered = int(record["total"].values[0])  # ERP delivered till now
 
-            # Current attendance (correct, ERP-based)
-            percent = round((attended / delivered) * 100, 2) if delivered > 0 else 0.0
+            # Increment bunk count for this subject
+            bunk_counter[code] += 1
+            bunked_so_far = bunk_counter[code]
 
-            # Attendance AFTER attending today's class
-            future_percent = round(((attended + 1) / (delivered + 1)) * 100, 2)
+            # Current attendance
+            current_percent = (
+                round((attended / delivered) * 100, 2)
+                if delivered > 0 else 0.0
+            )
 
-            subject = SUBJECT_MAP.get(row["code"], row["code"])
-            label = f"{row['time']} | {subject}"
-            
-            if future_percent >= 80:
-                class_card(row["time"], subject, "SAFE BUNK 😎", future_percent, "SAFE")
-            elif future_percent >= 75:
-                class_card(row["time"], subject, "RISKY ⚠️", future_percent, "RISKY")
+            # Attendance AFTER bunking all classes so far today for this subject
+            bunk_percent = round(
+                (attended / (delivered + bunked_so_far)) * 100, 2
+            )
+
+            # Decide status based on AFTER-bunk percentage
+            if bunk_percent >= 80:
+                status = "SAFE BUNK 😎"
+                level = "SAFE"
+            elif bunk_percent >= 75:
+                status = "RISKY ⚠️"
+                level = "RISKY"
             else:
-                class_card(row["time"], subject, "MUST ATTEND ❌", future_percent, "CRITICAL")
+                status = "MUST ATTEND ❌"
+                level = "CRITICAL"
+
+            # Render card
+            class_card(
+                row["time"],
+                subject,
+                status,
+                f"{current_percent}% → {bunk_percent}%",
+                level
+            )
 
     # -----------------------------
     # What If Attendance
@@ -700,7 +739,7 @@ if att_file:
 
     st.subheader("🧭 Today’s Attendance Verdict")
 
-    today = datetime.now().strftime("%a")
+    today = effective_date.strftime("%a")
 
     today_subjects = [
         SUBJECT_MAP.get(row["code"], row["code"])
