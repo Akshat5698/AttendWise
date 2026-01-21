@@ -18,7 +18,7 @@ def daily_verdict(today_classes):
         else:
             votes["SAFE"] += 1
 
-    # Decision: danger wins ties
+    # Danger wins ties
     if votes["NOT SAFE"] >= max(votes["RISKY"], votes["SAFE"]):
         return {
             "status": "NOT SAFE",
