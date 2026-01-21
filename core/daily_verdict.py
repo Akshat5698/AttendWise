@@ -1,23 +1,37 @@
-def daily_verdict(today_subjects, priority_df, health_score):
-    # Subjects today that are critical
-    must_attend_today = priority_df[
-        (priority_df["Subject"].isin(today_subjects)) &
-        (priority_df["Priority"] == "Must Attend")
-    ]
+def daily_verdict(today_classes):
+    if not today_classes:
+        return None
 
-    if health_score < 50 or not must_attend_today.empty:
+    votes = {
+        "SAFE": 0,
+        "RISKY": 0,
+        "NOT SAFE": 0
+    }
+
+    for cls in today_classes:
+        status = cls["status"]
+
+        if status == "MUST ATTEND":
+            votes["NOT SAFE"] += 1
+        elif status == "RISKY":
+            votes["RISKY"] += 1
+        else:
+            votes["SAFE"] += 1
+
+    # Decision: danger wins ties
+    if votes["NOT SAFE"] >= max(votes["RISKY"], votes["SAFE"]):
         return {
-            "status": "❌ NOT SAFE TO BUNK",
-            "reason": "Critical attendance risk today."
+            "status": "NOT SAFE",
+            "reason": f"{votes['NOT SAFE']} class(es) voted NOT SAFE."
         }
 
-    if health_score < 70:
+    if votes["RISKY"] >= votes["SAFE"]:
         return {
-            "status": "⚠️ RISKY BUNK DAY",
-            "reason": "Attendance health is unstable."
+            "status": "RISKY",
+            "reason": f"{votes['RISKY']} class(es) voted RISKY."
         }
 
     return {
-        "status": "✅ SAFE TO BUNK",
-        "reason": "Attendance is healthy today."
+        "status": "SAFE",
+        "reason": f"{votes['SAFE']} class(es) voted SAFE."
     }

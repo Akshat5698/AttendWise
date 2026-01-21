@@ -438,9 +438,16 @@ if att_file:
     # -----------------------------
 
     st.subheader("🔥 Today's Smart Bunk Plan")
+    today_slot_verdicts = []  
+
 
     today = effective_date.strftime("%a")
-    today_rows = timetable[timetable["day"] == today]
+    today_short = effective_date.strftime("%a").lower()
+
+    today_rows = timetable[
+        timetable["day"].str.strip().str.lower().str[:3] == today_short
+    ]
+
 
     # Tracks how many classes of each subject are bunked today
     bunk_counter = defaultdict(int)
@@ -484,6 +491,17 @@ if att_file:
             else:
                 status = "MUST ATTEND ❌"
                 level = "CRITICAL"
+            # 🔥 STORE SLOT VERDICT FOR PHASE 5 (VOTING)
+            today_slot_verdicts.append({
+                "subject": subject,
+                "status": (
+                    "MUST ATTEND"
+                    if level == "CRITICAL"
+                    else "RISKY"
+                    if level == "RISKY"
+                    else "SAFE"
+                )
+            })
 
             # Render card
             class_card(
@@ -737,32 +755,51 @@ if att_file:
     # Today's Attendance Verdict (Phase 5)
     # -----------------------------
 
-    st.subheader("🧭 Today’s Attendance Verdict")
+    st.subheader("🧭 Today's Attendance Verdict")
 
-    today = effective_date.strftime("%a")
+    today_short = effective_date.strftime("%a").lower()
+    
+    today_classes = today_slot_verdicts.copy()
 
-    today_subjects = [
-        SUBJECT_MAP.get(row["code"], row["code"])
-        for _, row in timetable[timetable["day"] == today].iterrows()
-    ]
+    
+    # -----------------------------
+    # Verdict Rendering (VOTING)
+    # -----------------------------
 
-    if not today_subjects:
-        st.success("🟢 No classes today")
-        st.caption("Enjoy your free day. No attendance decisions required.")
-        verdict = None
+    if not today_slot_verdicts:
+        st.error("❌ No class slots detected for today.")
+        st.caption("Voting cannot happen because no slot verdicts exist.")
     else:
-        verdict = daily_verdict(today_subjects, df_priority_full, health)
+        today_classes = today_slot_verdicts.copy()
+        verdict = daily_verdict(today_classes)
 
-    if verdict:
-        if "NOT SAFE" in verdict["status"]:
-            st.error("❌ Not safe to bunk today")
-            st.caption(verdict["reason"])
-        elif "RISKY" in verdict["status"]:
-            st.warning("⚠️ Risky to bunk today")
-            st.caption(verdict["reason"])
+        safe_votes = sum(1 for c in today_classes if c["status"] == "SAFE")
+        risky_votes = sum(1 for c in today_classes if c["status"] == "RISKY")
+        must_votes = sum(1 for c in today_classes if c["status"] == "MUST ATTEND")
+        
+        if verdict["status"] == "NOT SAFE":
+            st.error("🚨 Attendance Red Zone")
+            st.markdown(
+                "Today is **not the day to disappear**. "
+                "Too many classes are waving red flags. "
+                "Show up, survive, bunk another day."
+            )
+
+        elif verdict["status"] == "RISKY":
+            st.warning("⚠️ Tactical Bunk Zone")
+            st.markdown(
+                "You *can* bunk, but only if you choose wisely. "
+                "One wrong move and attendance will remember this forever."
+            )
+
         else:
-            st.success("✅ Safe to bunk today")
-            st.caption(verdict["reason"])
+            st.success("😌 Green Light for Bunking")
+            st.markdown(
+                "Attendance is on your side today. "
+                "If you bunk, do it guilt-free and responsibly."
+            )
+
+    
 
 
     # -----------------------------
