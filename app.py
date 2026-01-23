@@ -434,10 +434,11 @@ if att_file:
 
     timetable = pd.DataFrame(schedule)
 
-
     # -----------------------------
     # Today's Smart Bunk Plan
     # -----------------------------
+    
+    effective_date = effective_date.date() if isinstance(effective_date, datetime) else effective_date
 
     st.subheader("🔥 Today's Smart Bunk Plan")
     today_slot_verdicts = []

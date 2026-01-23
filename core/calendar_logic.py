@@ -106,10 +106,15 @@ def is_teaching_day(date_obj: datetime) -> bool:
         return True
 
     return False
-def get_effective_timetable_day(date_obj: datetime) -> str:
+
+def date_to_str(date_obj) -> str:
+    return date_obj.strftime("%Y-%m-%d")
+
+
+def get_effective_timetable_day(date_obj) -> str | None:
     """
-    Returns the academic timetable day:
-    mon/tue/wed/thu/fri
+    Returns the academic timetable day: mon/tue/wed/thu/fri
+    or None if it's a test-only day
     """
 
     date_str = date_to_str(date_obj)
@@ -121,6 +126,7 @@ def get_effective_timetable_day(date_obj: datetime) -> str:
         return mapped[:3].lower()
 
     return date_obj.strftime("%a").lower()
+
 
 
 # ==============================
