@@ -512,7 +512,7 @@ if att_file:
                 f"{current_percent}% → {bunk_percent}%",
                 level
             )
-
+    st.caption(f"📅 Academic day followed today: {today_short.upper()}")
 
     # -----------------------------
     # What If Attendance
