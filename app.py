@@ -451,7 +451,11 @@ if att_file:
         st.stop()
 
     today_rows = timetable[
-        timetable["day"].str.strip().str.lower().str[:3] == today_short
+        timetable["day"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .str.startswith(today_short)
     ]
 
     bunk_counter = defaultdict(int)
