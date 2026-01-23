@@ -22,6 +22,8 @@ from core.daily_verdict import daily_verdict
 from core.forecast import forecast
 from datetime import datetime, timedelta
 from collections import defaultdict
+from core.calendar_logic import get_effective_timetable_day
+
 
 # NOTE:
 # Internal columns must NEVER be rendered directly.
@@ -438,18 +440,20 @@ if att_file:
     # -----------------------------
 
     st.subheader("🔥 Today's Smart Bunk Plan")
-    today_slot_verdicts = []  
+    today_slot_verdicts = []
 
+    # 🔥 Academic day resolution (handles working Saturdays)
+    # 🔥 Academic day resolution (calendar-aware)
+    today_short = get_effective_timetable_day(effective_date)
 
-    today = effective_date.strftime("%a")
-    today_short = effective_date.strftime("%a").lower()
+    if today_short is None:
+        st.info("📝 Today is a test day. No bunk decisions.")
+        st.stop()
 
     today_rows = timetable[
         timetable["day"].str.strip().str.lower().str[:3] == today_short
     ]
 
-
-    # Tracks how many classes of each subject are bunked today
     bunk_counter = defaultdict(int)
 
     if today_rows.empty:
@@ -464,24 +468,20 @@ if att_file:
                 continue
 
             attended = int(record["attended"].values[0])
-            delivered = int(record["total"].values[0])  # ERP delivered till now
+            delivered = int(record["total"].values[0])
 
-            # Increment bunk count for this subject
             bunk_counter[code] += 1
             bunked_so_far = bunk_counter[code]
 
-            # Current attendance
             current_percent = (
                 round((attended / delivered) * 100, 2)
                 if delivered > 0 else 0.0
             )
 
-            # Attendance AFTER bunking all classes so far today for this subject
             bunk_percent = round(
                 (attended / (delivered + bunked_so_far)) * 100, 2
             )
 
-            # Decide status based on AFTER-bunk percentage
             if bunk_percent >= 80:
                 status = "SAFE BUNK 😎"
                 level = "SAFE"
@@ -491,19 +491,16 @@ if att_file:
             else:
                 status = "MUST ATTEND ❌"
                 level = "CRITICAL"
-            # 🔥 STORE SLOT VERDICT FOR PHASE 5 (VOTING)
+
             today_slot_verdicts.append({
                 "subject": subject,
                 "status": (
-                    "MUST ATTEND"
-                    if level == "CRITICAL"
-                    else "RISKY"
-                    if level == "RISKY"
+                    "MUST ATTEND" if level == "CRITICAL"
+                    else "RISKY" if level == "RISKY"
                     else "SAFE"
                 )
             })
 
-            # Render card
             class_card(
                 row["time"],
                 subject,
@@ -511,6 +508,7 @@ if att_file:
                 f"{current_percent}% → {bunk_percent}%",
                 level
             )
+
 
     # -----------------------------
     # What If Attendance

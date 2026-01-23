@@ -17,6 +17,21 @@ HOLIDAYS = {
     "2026-05-27",  # Bakrid (outside teaching range, safety)
 }
 
+# ==============================
+# WORKING SATURDAYS (with timetable mapping)
+# ==============================
+
+WORKING_SATURDAYS = {
+    "2026-01-23": "Monday",
+    "2026-01-31": "Wednesday",
+    "2026-02-14": "Friday",
+    "2026-02-28": "Wednesday",
+    "2026-03-14": "Thursday",
+    "2026-03-28": "Friday",
+    "2026-04-11": "Test",      # Mid-sem test day
+    "2026-04-25": "Tuesday",
+}
+
 MID_SEM_DAYS = {
     # 1st MST
     "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20",
@@ -45,6 +60,13 @@ def is_sunday(date_obj: datetime) -> bool:
 def is_holiday(date_obj: datetime) -> bool:
     return date_to_str(date_obj) in HOLIDAYS
 
+def is_working_saturday(date_obj: datetime) -> bool:
+    return (
+        date_obj.weekday() == 5 and
+        date_to_str(date_obj) in WORKING_SATURDAYS and
+        WORKING_SATURDAYS[date_to_str(date_obj)] != "Test"
+    )
+
 
 def is_mid_sem_day(date_obj: datetime) -> bool:
     return date_to_str(date_obj) in MID_SEM_DAYS
@@ -55,8 +77,13 @@ def is_teaching_day(date_obj: datetime) -> bool:
     Teaching day = within semester range AND
                    not Sunday AND
                    not holiday AND
+                   (
+                       weekday Mon–Fri OR
+                       approved working Saturday
+                   ) AND
                    not mid-sem test day
     """
+
     if date_obj < SEMESTER_START or date_obj > SEMESTER_END:
         return False
 
@@ -66,10 +93,34 @@ def is_teaching_day(date_obj: datetime) -> bool:
     if is_holiday(date_obj):
         return False
 
+    # Mid-sem tests override everything
     if is_mid_sem_day(date_obj):
         return False
 
-    return True
+    # Normal weekdays (Mon–Fri)
+    if date_obj.weekday() < 5:
+        return True
+
+    # Saturday: only if explicitly marked working
+    if is_working_saturday(date_obj):
+        return True
+
+    return False
+def get_effective_timetable_day(date_obj: datetime) -> str:
+    """
+    Returns the academic timetable day:
+    mon/tue/wed/thu/fri
+    """
+
+    date_str = date_to_str(date_obj)
+
+    if date_str in WORKING_SATURDAYS:
+        mapped = WORKING_SATURDAYS[date_str]
+        if mapped == "Test":
+            return None
+        return mapped[:3].lower()
+
+    return date_obj.strftime("%a").lower()
 
 
 # ==============================
