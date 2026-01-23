@@ -22,7 +22,7 @@ HOLIDAYS = {
 # ==============================
 
 WORKING_SATURDAYS = {
-    "2026-01-23": "Monday",
+    "2026-01-24": "Monday",
     "2026-01-31": "Wednesday",
     "2026-02-14": "Friday",
     "2026-02-28": "Wednesday",
