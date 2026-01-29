@@ -106,7 +106,16 @@ def get_day_subjects_from_timetable(day_short, timetable):
     Example: {"25CSH-114": 2, "25MAT-101": 1}
     """
 
-    day_rows = timetable[timetable["day"] == day_short]
+    if day_short is None:
+        return {}
+
+    day_rows = timetable[
+        timetable["day"]
+        .astype(str)
+        .str.strip()
+        .str.lower()
+        .str.startswith(day_short.lower())
+    ]
 
     subject_count = {}
 
@@ -116,7 +125,4 @@ def get_day_subjects_from_timetable(day_short, timetable):
 
     return subject_count
 
-
-
-    return 0
 
