@@ -23,6 +23,7 @@ from core.forecast import forecast
 from datetime import datetime, timedelta
 from collections import defaultdict
 from core.calendar_logic import get_effective_timetable_day
+from core.attendance_logic import get_day_subjects_from_timetable
 
 
 # NOTE:
@@ -514,6 +515,157 @@ if att_file:
                 level
             )
     st.caption(f"📅 Academic day followed today: {today_short.upper()}")
+
+    # -----------------------------
+    # Skip College Planner (Calendar + Smart Bunk Logic)
+    # -----------------------------
+
+    st.subheader("📅 Skip College Planner")
+
+    # --- Date inputs (SEPARATE, DD/MM/YYYY) ---
+    col_from, col_to = st.columns(2)
+
+    with col_from:
+        from_date = st.date_input(
+            "From date",
+            value=effective_date,
+            min_value=effective_date,
+            format="DD/MM/YYYY"
+        )
+
+    with col_to:
+        till_date = st.date_input(
+            "Till date",
+            value=effective_date,
+            min_value=effective_date,
+            format="DD/MM/YYYY"
+        )
+
+    # --- Options ---
+    col_opt1, col_opt2 = st.columns(2)
+
+    with col_opt1:
+        skip_labs = st.checkbox("Skip lab classes too", value=True)
+
+    with col_opt2:
+        apply_skip = st.checkbox("Apply skip for selected date range")
+
+    # --- Validation ---
+    if apply_skip:
+
+        if from_date > till_date:
+            st.error("❌ From date cannot be after Till date.")
+            st.stop()
+
+        bunked_classes = defaultdict(int)
+        academic_days = 0
+
+        current_date = from_date
+
+        while current_date <= till_date:
+
+            # Same resolution used in Smart Bunk
+            day_short = get_effective_timetable_day(current_date)
+
+            if day_short is not None:
+
+                day_rows = timetable[
+                    timetable["day"]
+                    .astype(str)
+                    .str.strip()
+                    .str.lower()
+                    .str.startswith(day_short.lower())
+                ]
+
+                if not day_rows.empty:
+                    academic_days += 1
+
+                for _, row in day_rows.iterrows():
+                    code = row["code"]
+                    subject_name = SUBJECT_MAP.get(code, code).lower()
+
+                    if not skip_labs and "lab" in subject_name:
+                        continue
+
+                    bunked_classes[code] += 1
+
+            current_date += timedelta(days=1)
+
+        # --- Output ---
+        if academic_days == 0:
+            st.info("📭 No academic classes fall within the selected date range.")
+        else:
+            rows = []
+
+            for code, bunk_count in bunked_classes.items():
+
+                record = att[att["code"] == code]
+                if record.empty:
+                    continue
+
+                subject = SUBJECT_MAP.get(code, code)
+
+                attended = int(record["attended"].values[0])
+                delivered = int(record["total"].values[0])
+
+                current_percent = (
+                    round((attended / delivered) * 100, 2)
+                    if delivered > 0 else 0
+                )
+
+                new_total = delivered + bunk_count
+                new_percent = round((attended / new_total) * 100, 2)
+
+                # Classes needed to recover to 75%
+                if new_percent < 75:
+                    needed = math.ceil(
+                        (0.75 * new_total - attended) / (1 - 0.75)
+                    )
+                else:
+                    needed = 0
+
+                rows.append({
+                    "Subject": subject,
+                    "Current %": current_percent,
+                    "Classes Skipped": bunk_count,
+                    "After Skip %": new_percent,
+                    "Classes Needed for 75%": needed if needed > 0 else "—",
+                    "Status": "⚠️ Below 75%" if new_percent < 75 else "✅ Safe"
+                })
+
+
+            impact_df = pd.DataFrame(rows)
+
+            # --- Summary ---
+            colA, colB, colC = st.columns(3)
+            colA.metric("📅 Academic Days Skipped", academic_days)
+            colB.metric("📚 Total Classes Skipped", sum(bunked_classes.values()))
+            colC.metric(
+                "⚠️ Subjects Below 75%",
+                (impact_df["After Skip %"] < 75).sum()
+            )
+
+            # --- Highlight danger rows ---
+            def highlight(row):
+                return (
+                    ["background-color: #3b0a0a"] * len(row)
+                    if row["After Skip %"] < 75
+                    else ["" for _ in row]
+                )
+
+            st.dataframe(
+                impact_df.style.apply(highlight, axis=1),
+                use_container_width=True,
+                hide_index=True
+            )
+
+            # --- Export ---
+            st.download_button(
+                "⬇️ Download Skip Impact Report (CSV)",
+                impact_df.to_csv(index=False),
+                file_name="skip_college_impact.csv",
+                mime="text/csv"
+            )
 
     # -----------------------------
     # What If Attendance

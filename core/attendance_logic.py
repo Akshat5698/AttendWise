@@ -74,4 +74,49 @@ def get_subject_total_classes(subject_or_code, timetable):
             return subject_totals[code]
 
     # Not found in timetable
+    from datetime import datetime
+
+def get_effective_timetable_day(effective_date):
+    """
+    Returns timetable day short form:
+    Mon, Tue, Wed, Thu, Fri, Sat
+    Returns None for holidays / non-academic days
+    """
+
+    # Convert date to weekday name
+    weekday = effective_date.strftime("%a")  # Mon, Tue, etc.
+
+    # Normal academic days
+    if weekday in ["Mon", "Tue", "Wed", "Thu", "Fri"]:
+        return weekday
+
+    # Handle Saturday logic
+    if weekday == "Sat":
+        # Example rule: working Saturdays only
+        # Change this condition if you have a calendar
+        return "Sat"
+
+    # Sunday or anything else
+    return None
+
+def get_day_subjects_from_timetable(day_short, timetable):
+    """
+    Returns subject_code -> number of classes
+    for a given timetable day.
+    Example: {"25CSH-114": 2, "25MAT-101": 1}
+    """
+
+    day_rows = timetable[timetable["day"] == day_short]
+
+    subject_count = {}
+
+    for _, row in day_rows.iterrows():
+        code = row["code"]
+        subject_count[code] = subject_count.get(code, 0) + 1
+
+    return subject_count
+
+
+
     return 0
+
