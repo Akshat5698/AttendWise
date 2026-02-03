@@ -666,6 +666,201 @@ if att_file:
                 file_name="skip_college_impact.csv",
                 mime="text/csv"
             )
+    # =============================
+    # DAY PLANNER (DATE-WISE)
+    # =============================
+
+    st.divider()
+    st.subheader("🗓️ Day Planner")
+    st.caption(
+        "Plan attendance day-by-day. Mark each academic day as Attend or Skip "
+        "and simulate the impact on your attendance."
+    )
+
+    # -----------------------------
+    # Date range selection
+    # -----------------------------
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        planner_from = st.date_input(
+            "From date",
+            value=effective_date,
+            format="DD/MM/YYYY"
+        )
+
+    with col2:
+        planner_till = st.date_input(
+            "Till date",
+            value=effective_date,
+            format="DD/MM/YYYY"
+        )
+
+    if planner_from > planner_till:
+        st.error("❌ From date cannot be after Till date.")
+        st.stop()
+
+    # -----------------------------
+    # Build date list
+    # -----------------------------
+
+    planner_dates = []
+    current = planner_from
+    while current <= planner_till:
+        planner_dates.append(current)
+        current += timedelta(days=1)
+
+    # -----------------------------
+    # Plan your days (UI)
+    # -----------------------------
+
+    st.markdown("### 📆 Plan your days")
+
+    day_decisions = {}
+    for d in planner_dates:
+        weekday = d.strftime("%a")  # Mon, Tue, Wed, Thu, Fri, Sat, Sun
+
+        # Sunday is NEVER academic
+        if weekday == "Sun":
+            is_academic = False
+            day_short = None
+        else:
+            day_short = weekday  # Mon, Tue, ..., Sat
+            # Academic only if timetable actually has classes that day
+            is_academic = not timetable[timetable["day"] == day_short].empty
+
+        is_weekend = weekday in ["Sat", "Sun"]
+
+        col_date, col_day, col_status, col_action = st.columns([2, 1, 2, 2])
+
+        with col_date:
+            st.write(d.strftime("%d/%m/%Y"))
+
+        with col_day:
+            st.write(weekday.upper())
+
+        with col_status:
+            if is_academic:
+                st.markdown(
+                    "<span style='color:#22c55e; font-weight:600;'>Academic Day</span>",
+                    unsafe_allow_html=True
+                )
+            else:
+                if weekday == "Sun":
+                    st.markdown(
+                        "<span style='color:#ef4444; font-weight:600;'>Sunday</span>",
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        "<span style='color:#94a3b8;'>No Classes</span>",
+                        unsafe_allow_html=True
+                    )
+
+        with col_action:
+            if is_academic:
+                day_decisions[d] = st.toggle(
+                    "Attend",
+                    value=not is_weekend,
+                    key=f"dayplanner_attend_{d}"
+                )
+            else:
+                st.write("—")
+
+
+    st.caption("🟢 Attend · 🔴 Skip · Holidays are locked")
+
+    # -----------------------------
+    # Simulation trigger
+    # -----------------------------
+
+    st.markdown("### 📊 Attendance Impact")
+    simulate_day_plan = st.button("📊 Simulate Attendance Impact")
+
+    # -----------------------------
+    # Simulation logic
+    # -----------------------------
+
+    if simulate_day_plan:
+
+        attended_extra = defaultdict(int)
+        bunked_extra = defaultdict(int)
+
+        for d, attend in day_decisions.items():
+
+            day_short = get_effective_timetable_day(d)
+            if day_short is None:
+                continue
+
+            day_rows = timetable[
+                timetable["day"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .str.startswith(day_short.lower())
+            ]
+
+            for _, row in day_rows.iterrows():
+                code = row["code"]
+
+                if attend:
+                    attended_extra[code] += 1
+                else:
+                    bunked_extra[code] += 1
+
+        # -----------------------------
+        # Build result table
+        # -----------------------------
+
+        rows = []
+
+        for _, row in att.iterrows():
+
+            code = row["code"]
+            subject = SUBJECT_MAP.get(code, code)
+
+            base_attended = int(row["attended"])
+            base_total = int(row["total"])
+
+            attended = base_attended + attended_extra.get(code, 0)
+            total = base_total + attended_extra.get(code, 0) + bunked_extra.get(code, 0)
+
+            percent = round((attended / total) * 100, 2) if total > 0 else 0
+
+            # Classes needed to reach 75%
+            if percent < 75:
+                needed = math.ceil((0.75 * total - attended) / 0.25)
+            else:
+                needed = 0
+
+            rows.append({
+                "Subject": subject,
+                "Attended (Planned)": attended_extra.get(code, 0),
+                "Skipped (Planned)": bunked_extra.get(code, 0),
+                "Final %": percent,
+                "Classes Needed for 75%": needed if needed > 0 else "—",
+                "Status": "⚠️ Below 75%" if percent < 75 else "✅ Safe"
+            })
+
+        result_df = pd.DataFrame(rows)
+
+        # -----------------------------
+        # Highlight risky subjects
+        # -----------------------------
+
+        def highlight(row):
+            return (
+                ["background-color: #3b0a0a"] * len(row)
+                if row["Final %"] < 75
+                else ["" for _ in row]
+            )
+
+        st.dataframe(
+            result_df.style.apply(highlight, axis=1),
+            use_container_width=True,
+            hide_index=True
+        )
 
     # -----------------------------
     # What If Attendance
