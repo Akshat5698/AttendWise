@@ -155,7 +155,14 @@ def class_card(time, subject, verdict, percent, level):
         """,
         unsafe_allow_html=True
     )
-    
+
+
+def sync_holiday_attend_toggle(attend_key, holiday_key):
+    # Keep decisions consistent: holiday means no attendance on that day.
+    if st.session_state.get(holiday_key, False):
+        st.session_state[attend_key] = False
+
+
 DAY_MAP = {
     "Monday": "Mon",
     "Tuesday": "Tue",
@@ -721,16 +728,30 @@ if att_file:
     for d in planner_dates:
         weekday = d.strftime("%a")  # Mon, Tue, Wed, Thu, Fri, Sat, Sun
 
-        # Sunday is NEVER academic
-        if weekday == "Sun":
+        # Use effective academic calendar day so working Saturdays are mapped correctly.
+        effective_day_short = get_effective_timetable_day(d)
+        if weekday == "Sun" or effective_day_short is None:
             is_academic = False
-            day_short = None
         else:
-            day_short = weekday  # Mon, Tue, ..., Sat
-            # Academic only if timetable actually has classes that day
-            is_academic = not timetable[timetable["day"] == day_short].empty
+            is_academic = not timetable[
+                timetable["day"]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .str.startswith(effective_day_short.lower())
+            ].empty
 
         is_weekend = weekday in ["Sat", "Sun"]
+        attend_key = f"dayplanner_attend_{d}"
+        holiday_key = f"dayplanner_holiday_{d}"
+        default_holiday = is_holiday(datetime.combine(d, datetime.min.time()))
+
+        if holiday_key not in st.session_state:
+            st.session_state[holiday_key] = default_holiday
+        if attend_key not in st.session_state:
+            st.session_state[attend_key] = not is_weekend
+        if st.session_state[holiday_key]:
+            st.session_state[attend_key] = False
 
         col_date, col_day, col_status, col_action = st.columns([2, 1, 2, 3])
 
@@ -742,10 +763,16 @@ if att_file:
 
         with col_status:
             if is_academic:
-                st.markdown(
-                    "<span style='color:#22c55e; font-weight:600;'>Academic Day</span>",
-                    unsafe_allow_html=True
-                )
+                if st.session_state[holiday_key]:
+                    st.markdown(
+                        "<span style='color:#facc15; font-weight:600;'>Holiday</span>",
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        "<span style='color:#22c55e; font-weight:600;'>Academic Day</span>",
+                        unsafe_allow_html=True
+                    )
             else:
                 if weekday == "Sun":
                     st.markdown(
@@ -765,15 +792,16 @@ if att_file:
                 with action_col1:
                     attend = st.toggle(
                         "Attend",
-                        value=not is_weekend,
-                        key=f"dayplanner_attend_{d}"
+                        key=attend_key,
+                        disabled=st.session_state[holiday_key]
                     )
 
                 with action_col2:
                     holiday_selected = st.toggle(
                         "Holiday",
-                        value=is_holiday(datetime.combine(d, datetime.min.time())),
-                        key=f"dayplanner_holiday_{d}"
+                        key=holiday_key,
+                        on_change=sync_holiday_attend_toggle,
+                        args=(attend_key, holiday_key)
                     )
 
                 day_decisions[d] = {
@@ -831,6 +859,8 @@ if att_file:
         # -----------------------------
 
         rows = []
+        base_total_attended = 0
+        base_total_conducted = 0
 
         for _, row in att.iterrows():
 
@@ -839,6 +869,8 @@ if att_file:
 
             base_attended = int(row["attended"])
             base_total = int(row["total"])
+            base_total_attended += base_attended
+            base_total_conducted += base_total
 
             attended = base_attended + attended_extra.get(code, 0)
             total = base_total + attended_extra.get(code, 0) + bunked_extra.get(code, 0)
@@ -859,6 +891,25 @@ if att_file:
                 "Classes Needed for 75%": needed if needed > 0 else "—",
                 "Status": "⚠️ Below 75%" if percent < 75 else "✅ Safe"
             })
+
+        total_attended_planned = sum(attended_extra.values())
+        total_skipped_planned = sum(bunked_extra.values())
+        overall_attended = base_total_attended + total_attended_planned
+        overall_total = base_total_conducted + total_attended_planned + total_skipped_planned
+        overall_percent = round((overall_attended / overall_total) * 100, 2) if overall_total > 0 else 0
+        overall_needed = (
+            math.ceil((0.75 * overall_total - overall_attended) / 0.25)
+            if overall_percent < 75 else 0
+        )
+
+        rows.append({
+            "Subject": "Overall Attendance",
+            "Attended (Planned)": total_attended_planned,
+            "Skipped (Planned)": total_skipped_planned,
+            "Final %": overall_percent,
+            "Classes Needed for 75%": overall_needed if overall_needed > 0 else "—",
+            "Status": "⚠️ Below 75%" if overall_percent < 75 else "✅ Safe"
+        })
 
         result_df = pd.DataFrame(rows)
 
@@ -1017,15 +1068,19 @@ if att_file:
     # 🔒 Freeze full dataframe for other phases
     df_priority_full = df_priority.copy()
 
-    # Softer, clearer highlighting
-    def highlight_rows(row):
+    # Highlight only Subject text (no row overlay colors)
+    def highlight_subject_name(row):
+        styles = [""] * len(row)
+        subject_idx = row.index.get_loc("Subject")
         if "Critical" in row["Status"]:
-            return ["background-color: #3b0a0a"] * len(row)
-        if "Watch" in row["Status"]:
-            return ["background-color: #3b2f0a"] * len(row)
-        if "Safe" in row["Status"]:
-            return ["background-color: #0a3b1a"] * len(row)
-        return [""] * len(row)
+            styles[subject_idx] = "color: #f87171; font-weight: 700;"
+        elif "Watch" in row["Status"]:
+            styles[subject_idx] = "color: #facc15; font-weight: 700;"
+        elif "Safe" in row["Status"]:
+            styles[subject_idx] = "color: #4ade80; font-weight: 700;"
+        else:
+            styles[subject_idx] = "font-weight: 700;"
+        return styles
 
     # Hide internal columns from UI
     display_df = df_priority_full.drop(
@@ -1038,10 +1093,24 @@ if att_file:
     cols.insert(cols.index("Status") + 1, cols.pop(cols.index("Bunk Budget")))
     display_df = display_df[cols]
 
+    overall_attended = int(att["attended"].sum())
+    overall_total = int(att["total"].sum())
+    overall_percent = round((overall_attended / overall_total) * 100, 2) if overall_total > 0 else 0
+
     st.dataframe(
-        display_df.style.apply(highlight_rows, axis=1),
+        display_df.style.apply(highlight_subject_name, axis=1),
         use_container_width=True,
         hide_index=True
+    )
+
+    overall_color = "#4ade80" if overall_percent >= 75 else "#facc15"
+    st.markdown(
+        f"""
+        <div style="margin-top:12px; font-size:26px; font-weight:800; color:{overall_color};">
+            Overall Attendance: {overall_percent}%
+        </div>
+        """,
+        unsafe_allow_html=True
     )
     
     st.download_button(
@@ -1227,4 +1296,3 @@ st.markdown("""
     <p>&copy; 2026 Akshat N & Akshat D. All rights reserved.</p>
 </div>
 """, unsafe_allow_html=True)
-
