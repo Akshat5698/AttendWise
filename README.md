@@ -174,9 +174,8 @@ These days are included when estimating recovery timelines.
 
 ## 👨‍💻 Author
 
-**Akshat Dwivedi**  
-B.Tech AIML Student  
-Project: AttendWise  
+**Akshat Dwivedi**
+**Akshat Nigam**
 
 ---
 
