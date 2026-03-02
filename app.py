@@ -22,7 +22,7 @@ from core.daily_verdict import daily_verdict
 from core.forecast import forecast
 from datetime import datetime, timedelta
 from collections import defaultdict
-from core.calendar_logic import get_effective_timetable_day
+from core.calendar_logic import get_effective_timetable_day, is_holiday
 from core.attendance_logic import get_day_subjects_from_timetable
 
 
@@ -732,7 +732,7 @@ if att_file:
 
         is_weekend = weekday in ["Sat", "Sun"]
 
-        col_date, col_day, col_status, col_action = st.columns([2, 1, 2, 2])
+        col_date, col_day, col_status, col_action = st.columns([2, 1, 2, 3])
 
         with col_date:
             st.write(d.strftime("%d/%m/%Y"))
@@ -760,16 +760,31 @@ if att_file:
 
         with col_action:
             if is_academic:
-                day_decisions[d] = st.toggle(
-                    "Attend",
-                    value=not is_weekend,
-                    key=f"dayplanner_attend_{d}"
-                )
+                action_col1, action_col2 = st.columns(2)
+
+                with action_col1:
+                    attend = st.toggle(
+                        "Attend",
+                        value=not is_weekend,
+                        key=f"dayplanner_attend_{d}"
+                    )
+
+                with action_col2:
+                    holiday_selected = st.toggle(
+                        "Holiday",
+                        value=is_holiday(datetime.combine(d, datetime.min.time())),
+                        key=f"dayplanner_holiday_{d}"
+                    )
+
+                day_decisions[d] = {
+                    "attend": attend,
+                    "holiday": holiday_selected
+                }
             else:
                 st.write("—")
 
 
-    st.caption("🟢 Attend · 🔴 Skip · Holidays are locked")
+    st.caption("🟢 Attend · 🔴 Skip · 🟡 Holiday (holiday days are excluded)")
 
     # -----------------------------
     # Simulation trigger
@@ -787,7 +802,9 @@ if att_file:
         attended_extra = defaultdict(int)
         bunked_extra = defaultdict(int)
 
-        for d, attend in day_decisions.items():
+        for d, decision in day_decisions.items():
+            if decision["holiday"]:
+                continue
 
             day_short = get_effective_timetable_day(d)
             if day_short is None:
@@ -804,7 +821,7 @@ if att_file:
             for _, row in day_rows.iterrows():
                 code = row["code"]
 
-                if attend:
+                if decision["attend"]:
                     attended_extra[code] += 1
                 else:
                     bunked_extra[code] += 1
