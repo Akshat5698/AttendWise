@@ -4,6 +4,7 @@ import re
 import math
 import warnings
 import pytz
+from pathlib import Path
 
 from core.attendance_logic import bunk_allowed
 from core.budget import bunk_budget
@@ -26,12 +27,17 @@ from core.calendar_logic import get_effective_timetable_day, is_holiday
 from core.attendance_logic import get_day_subjects_from_timetable
 
 
+# -----------------------------
+# Rendering Guardrails
+# -----------------------------
 # NOTE:
 # Internal columns must NEVER be rendered directly.
 # Always display `display_df`, not df_priority or df_priority_full.
 
 
-
+# -----------------------------
+# App Time Context
+# -----------------------------
 # Use local timezone
 IST = pytz.timezone("Asia/Kolkata")
 now = datetime.now(IST)
@@ -51,16 +57,24 @@ st.set_page_config(
     layout="wide"
 )
 
-st.markdown("""
-<style>
-/* Force Streamlit main container to behave */
-.block-container {
-    padding-top: 1rem;
-}
-</style>
-""", unsafe_allow_html=True)
+# -----------------------------
+# Global CSS Loader
+# -----------------------------
+BASE_DIR = Path(__file__).resolve().parent
 
 
+def inject_css(filename):
+    css_path = BASE_DIR / "assets" / filename
+    with open(css_path, encoding="utf-8") as css_file:
+        st.markdown(f"<style>{css_file.read()}</style>", unsafe_allow_html=True)
+
+
+inject_css("styles.css")
+
+
+# -----------------------------
+# Session Defaults
+# -----------------------------
 if "setup_done" not in st.session_state:
     st.session_state.setup_done = False
 
@@ -72,187 +86,12 @@ if "group" not in st.session_state:
     st.session_state.group = None
 
 
-
+# -----------------------------
+# Runtime Assets
+# -----------------------------
 warnings.filterwarnings("ignore", message="Could not get FontBBox")
 
 logo = Image.open("assets/logo.png")
-
-# Global CSS matching the mockup
-st.markdown("""
-<style>
-/* Base theme */
-.stApp {
-    background: radial-gradient(
-        circle at center,
-        #0f172a 0%,
-        #020617 70%
-    );
-}
-
-/* Hide standard Streamlit header */
-[data-testid="stHeader"], [data-testid="stToolbar"] {
-    background: transparent;
-}
-
-
-/* Reusable Card Style */
-.dash-card {
-    background-color: #151d30;
-    border-radius: 14px;
-    padding: 24px 28px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    height: 100%;
-}
-
-.card-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 28px !important;
-    color: #f8fafc;
-}
-
-/* Keep section/header spacing consistent across dashboard pages */
-.stMain h1,
-.stMain h2,
-.stMain h3 {
-    margin-bottom: 24px !important;
-}
-
-/* Let the page content stretch, pushing footer to the bottom */
-[data-testid="stVerticalBlock"] > div:last-child {
-    margin-top: auto;
-}
-
-/* Chart Spacing */
-[data-testid="stVegaLiteChart"] {
-    padding-top: 20px;
-}
-
-/* Circular Progress Ring */
-.progress-ring {
-    position: relative;
-    width: 140px;
-    height: 140px;
-}
-.progress-ring svg {
-    transform: rotate(-90deg);
-}
-.progress-ring circle {
-    fill: transparent;
-    stroke-width: 16;
-}
-.progress-ring circle.bg {
-    stroke: #1e293b;
-}
-.progress-ring circle.fg {
-    stroke: #66c3c7;
-    stroke-linecap: round;
-    transition: stroke-dashoffset 1s ease-in-out;
-}
-.progress-label {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 2rem;
-    font-weight: 700;
-    color: white;
-}
-
-/* Status Pill */
-.status-pill {
-    display: inline-block;
-    padding: 4px 12px;
-    border-radius: 9999px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    border: 1px solid rgba(255,255,255,0.1);
-}
-.status-safe { background: rgba(46, 204, 113, 0.15); color: #2ecc71; border-color: rgba(46, 204, 113, 0.3); }
-.status-warn { background: rgba(255, 165, 0, 0.15); color: #ffa500; border-color: rgba(255, 165, 0, 0.3); }
-.status-crit { background: rgba(255, 75, 75, 0.15); color: #ff4b4b; border-color: rgba(255, 75, 75, 0.3); }
-
-/* Option Cards (Right side) */
-.option-card {
-    background-color: #1a2336;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 12px;
-    border: 1px solid rgba(255,255,255,0.05);
-}
-.option-title {
-    display: flex;
-    align-items: center;
-    font-weight: 600;
-    margin-bottom: 4px;
-    font-size: 0.95rem;
-}
-.option-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    margin-right: 8px;
-}
-.dot-green { background-color: #2ecc71; }
-.dot-yellow { background-color: #ffa500; }
-.dot-red { background-color: #ff4b4b; }
-.option-desc {
-    color: #94a3b8;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    padding-left: 16px;
-}
-
-/* Linear Progress Bar */
-.linear-bar-container {
-    width: 100%;
-    height: 8px;
-    background-color: #1e293b;
-    border-radius: 4px;
-    position: relative;
-    margin: 10px 0;
-}
-.linear-bar-fill {
-    height: 100%;
-    background-color: #66c3c7;
-    border-radius: 4px;
-}
-.linear-bar-target {
-    position: absolute;
-    left: 75%;
-    top: -4px;
-    bottom: -4px;
-    width: 2px;
-    background-color: #e2e8f0;
-    z-index: 10;
-}
-.linear-bar-target::after {
-    content: '';
-    position: absolute;
-    top: -4px;
-    left: -3px;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-    border-top: 4px solid #e2e8f0;
-}
-
-.subject-row {
-    display: grid;
-    grid-template-columns: 100px 1fr 30px 70px;
-    align-items: center;
-    gap: 15px;
-    background-color: #1a2336;
-    padding: 12px 16px;
-    border-radius: 8px;
-    margin-bottom: 8px;
-}
-.subject-name {
-    font-size: 0.9rem;
-    font-weight: 500;
-}
-</style>
-""", unsafe_allow_html=True)
 
 # -----------------------------
 # PERMANENT TIMETABLE LOADER
@@ -282,23 +121,17 @@ def extract_course_code(text):
     return match.group(1) if match else None
 
 def class_card(time, subject, verdict, percent, level):
-    color = {
-        "SAFE": "#2ecc71",
-        "RISKY": "#ffa500",
-        "CRITICAL": "#ff4b4b"
+    card_cls = {
+        "SAFE": "class-card-safe",
+        "RISKY": "class-card-risky",
+        "CRITICAL": "class-card-critical"
     }[level]
 
     st.markdown(
         f"""
-        <div style="
-            background:#111;
-            padding:14px;
-            border-radius:12px;
-            margin-bottom:10px;
-            border-left:6px solid {color};
-        ">
-            <div style="opacity:0.8">{time}</div>
-            <div style="font-size:16px;font-weight:600">{subject}</div>
+        <div class="class-card {card_cls}">
+            <div class="class-card-time">{time}</div>
+            <div class="class-card-subject">{subject}</div>
             <div><b>{verdict}</b> ({percent}%)</div>
         </div>
         """,
@@ -347,77 +180,14 @@ def saturday_classes_for_subject(subject_code, timetable, sat_calendar):
 
 
 def setup_screen():
-    # Hide chrome and center setup card on all viewports.
-    st.markdown('''
-    <style>
-    [data-testid="stHeader"],
-    [data-testid="stToolbar"],
-    [data-testid="stSidebar"],
-    footer {
-        display: none !important;
-    }
-
-    /* Safe setup-only override for Streamlit page wrapper */
-    .main .block-container {
-        width: 100% !important;
-        max-width: 100% !important;
-        min-height: 100vh !important;
-        padding: 0 24px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-
-    div[data-testid="stForm"] {
-        width: min(1000px, 100%) !important;
-        margin: 0 auto !important;
-        background-color: #111827 !important;
-        padding: 40px !important;
-        border-radius: 12px !important;
-        border: 1px solid rgba(255, 255, 255, 0.05) !important;
-    }
-
-    /* Button overrides */
-    div[data-testid="stForm"] .stFormSubmitButton > button {
-        background-color: transparent !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        color: white !important;
-        border-radius: 8px !important;
-        min-height: 48px !important;
-        transition: all 0.2s ease-in-out !important;
-    }
-    div[data-testid="stForm"] .stFormSubmitButton > button:hover {
-        border-color: #66c3c7 !important;
-        color: #66c3c7 !important;
-        background-color: rgba(102, 195, 199, 0.05) !important;
-    }
-
-    /* Setup field labels */
-    div[data-testid="stForm"] .stFileUploader label > div > p,
-    div[data-testid="stForm"] .stSelectbox label p {
-        font-weight: 500 !important;
-        font-size: 0.95rem !important;
-        color: #f8fafc !important;
-    }
-
-    @media (max-width: 768px) {
-        .main .block-container {
-            padding: 0 14px !important;
-        }
-
-        div[data-testid="stForm"] {
-            padding: 24px !important;
-        }
-    }
-    </style>
-    ''', unsafe_allow_html=True)
+    inject_css("setup.css")
 
     with st.form("setup_form"):
         st.markdown(
             '''
-            <div style="margin-bottom: 15px;">
-                <h2 style="font-weight: 700; font-size: 2rem; margin: 0 0 4px 0; padding: 0;">👋 Welcome to AttendWise</h2>
-                <p style="color: #94a3b8; margin: 0; padding: 0; font-size: 1.05rem;">Let's set things up.</p>
+            <div class="setup-heading">
+                <h2 class="setup-title">👋 Welcome to AttendWise</h2>
+                <p class="setup-subtitle">Let's set things up.</p>
             </div>
             ''',
             unsafe_allow_html=True
@@ -488,86 +258,6 @@ with st.sidebar:
             st.session_state.setup_done = False
             st.rerun()
 
-
-# DASHBOARD-ONLY STYLES
-
-st.markdown("""
-<style>
-/* Sidebar container */
-[data-testid="stSidebar"] {
-    background: linear-gradient(
-        180deg,
-        #020617,
-        #020617
-    );
-    border-right: 1px solid rgba(255,255,255,0.08);
-}
-
-/* Sidebar content padding */
-[data-testid="stSidebar"] > div:first-child {
-    padding-top: 2rem;
-}
-
-/* Sidebar text */
-[data-testid="stSidebar"] * {
-    color: #e5e7eb;
-}
-
-/* Sidebar headings */
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3 {
-    color: #ffffff;
-    font-weight: 600;
-}
-
-/* Sidebar buttons */
-[data-testid="stSidebar"] button {
-    background-color: #1f2937;
-    color: white;
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.08);
-    transition: all 0.2s ease-in-out;
-}
-
-[data-testid="stSidebar"] button:hover {
-    background-color: #374151;
-    border-color: rgba(255,255,255,0.2);
-}
-
-/* Selectbox / inputs */
-[data-testid="stSidebar"] select,
-[data-testid="stSidebar"] input {
-    background-color: #020617;
-    color: white;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.15);
-}
-
-/* Divider lines */
-[data-testid="stSidebar"] hr {
-    border-color: rgba(255,255,255,0.1);
-}
-</style>
-""", unsafe_allow_html=True)
-
-st.markdown("""
-<style>
-.header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding-top: 1.5rem;
-}
-.header-title h1 {
-    margin-bottom: 24px;
-}
-.header-title p {
-    margin-top: 0;
-    opacity: 0.75;
-}
-</style>
-""", unsafe_allow_html=True)
 
 st.markdown("""
 <div class="header">
@@ -762,7 +452,7 @@ if att_file:
         overall_attended = int(att["attended"].sum())
         overall_total = int(att["total"].sum())
         overall_percent = round((overall_attended / overall_total) * 100, 2) if overall_total > 0 else 0
-        overall_color = "#2ecc71" if overall_percent >= 75 else "#ffa500" if overall_percent >= 60 else "#ff4b4b"
+        overall_cls = "overall-safe" if overall_percent >= 75 else "overall-warn" if overall_percent >= 60 else "overall-crit"
 
         with col_left:
             # SVG math for progress ring (radius=60, circumference=377)
@@ -772,7 +462,7 @@ if att_file:
             st.markdown(
 f"""<div class="dash-card">
     <div class="card-title">Attendance Health Score</div>
-    <div style="display:flex; align-items:center; gap:40px; margin-bottom: 20px;">
+    <div class="health-layout">
         <div class="progress-ring">
             <svg width="140" height="140">
                 <circle class="bg" cx="70" cy="70" r="60"></circle>
@@ -781,13 +471,13 @@ f"""<div class="dash-card">
             <div class="progress-label">{health}%</div>
         </div>
         <div>
-            <div style="font-size:1.6rem; font-weight:600; margin-bottom:8px; color:#f8fafc;">{health_msg}</div>
-            <div style="font-size:1rem; color:#94a3b8; margin-bottom:12px;">{health_sub}</div>
-            <div style="font-size:0.85rem; color:#64748b; margin-bottom:16px;">Keep attendance above 75% to stay safe.</div>
+            <div class="health-msg">{health_msg}</div>
+            <div class="health-sub">{health_sub}</div>
+            <div class="health-note">Keep attendance above 75% to stay safe.</div>
             <div class="status-pill {status_cls}">Status: {status_text}</div>
         </div>
     </div>
-    <div style="font-size:1.2rem; font-weight:600; color:{overall_color}; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05); text-align: left;">
+    <div class="overall-attendance {overall_cls}">
         Overall Attendance: {overall_percent}%
     </div>
 </div>""", unsafe_allow_html=True
@@ -801,7 +491,7 @@ f"""<div class="dash-card">
             
             today_short = get_effective_timetable_day(effective_date)
             if today_short is None:
-                st.markdown("<div style='color:#facc15;'>📝 Today is a test day. No bunk decisions.</div>", unsafe_allow_html=True)
+                st.markdown("<div class='msg-test-day'>📝 Today is a test day. No bunk decisions.</div>", unsafe_allow_html=True)
             else:
                 today_rows = timetable[
                     timetable["day"]
@@ -814,7 +504,7 @@ f"""<div class="dash-card">
                 bunk_counter = defaultdict(int)
 
                 if today_rows.empty:
-                    st.markdown("<div style='color:#a3e635;'>No classes scheduled 🎉</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='msg-no-classes'>No classes scheduled 🎉</div>", unsafe_allow_html=True)
                 else:
                     for _, row in today_rows.iterrows():
                         code = row["code"]
@@ -920,11 +610,11 @@ f"""<div class="option-card">
                 stat = row["Status"]
                 
                 if "Safe" in stat:
-                    p_cls, p_color = "status-safe", "#2ecc71"
+                    p_cls, fill_cls = "status-safe", "fill-safe"
                 elif "Watch" in stat:
-                    p_cls, p_color = "status-warn", "#ffa500"
+                    p_cls, fill_cls = "status-warn", "fill-warn"
                 else:
-                    p_cls, p_color = "status-crit", "#ff4b4b"
+                    p_cls, fill_cls = "status-crit", "fill-crit"
                     
                 target = 75
                 # Ensure width doesn't blow up CSS
@@ -944,11 +634,11 @@ f"""<div class="option-card">
 f"""<div class="subject-row">
     <div class="subject-name">{subj_short}</div>
     <div class="linear-bar-container">
-        <div class="linear-bar-fill" style="width:{fill_w}%; background-color:{p_color};"></div>
-        <div class="linear-bar-target" style="left:{target}%;"></div>
+        <div class="linear-bar-fill {fill_cls}" style="width:{fill_w}%;"></div>
+        <div class="linear-bar-target"></div>
     </div>
-    <div style="font-size:0.85rem; color:#94a3b8;">{target}</div>
-    <div class="status-pill {p_cls}" style="text-align:center; min-width: 65px;">{pill_text}</div>
+    <div class="subject-target">{target}</div>
+    <div class="status-pill status-pill-small {p_cls}">{pill_text}</div>
 </div>""", unsafe_allow_html=True
                 )
             
@@ -962,7 +652,7 @@ f"""<div class="subject-row">
         st.markdown(
 """<div class="dash-card">
     <div class="card-title">📅 Skip College Planner</div>
-    <div style="font-size:0.9rem; color:#94a3b8;">Select a date range to forecast the impact of skipping college on your attendance.</div>
+    <div class="card-subtext">Select a date range to forecast the impact of skipping college on your attendance.</div>
 </div>""", unsafe_allow_html=True
         )
 
@@ -1138,7 +828,7 @@ f"""<div class="subject-row">
         st.markdown(
 """<div class="dash-card">
     <div class="card-title">🗓️ Day Planner</div>
-    <div style="font-size:0.9rem; color:#94a3b8;">Plan attendance day-by-day. Mark each academic day as Attend or Skip and simulate the impact.</div>
+    <div class="card-subtext">Plan attendance day-by-day. Mark each academic day as Attend or Skip and simulate the impact.</div>
 </div>""", unsafe_allow_html=True
         )
 
@@ -1226,23 +916,23 @@ f"""<div class="subject-row">
                     if is_academic:
                         if st.session_state[holiday_key]:
                             st.markdown(
-                                "<span style='color:#facc15; font-weight:600;'>Holiday</span>",
+                                "<span class='planner-status-holiday'>Holiday</span>",
                                 unsafe_allow_html=True
                             )
                         else:
                             st.markdown(
-                                "<span style='color:#22c55e; font-weight:600;'>Academic</span>",
+                                "<span class='planner-status-academic'>Academic</span>",
                                 unsafe_allow_html=True
                             )
                     else:
                         if weekday == "Sun":
                             st.markdown(
-                                "<span style='color:#ef4444; font-weight:600;'>Sun</span>",
+                                "<span class='planner-status-sun'>Sun</span>",
                                 unsafe_allow_html=True
                             )
                         else:
                             st.markdown(
-                                "<span style='color:#94a3b8;'>No Class</span>",
+                                "<span class='planner-status-none'>No Class</span>",
                                 unsafe_allow_html=True
                             )
 
@@ -1402,7 +1092,7 @@ f"""<div class="subject-row">
         st.markdown(
 """<div class="dash-card">
     <div class="card-title">🔮 What-If Attendance Simulator</div>
-    <div style="font-size:0.9rem; color:#94a3b8;">Forecast your attendance percentage based on hypothetical upcoming classes you attend or skip.</div>
+    <div class="card-subtext">Forecast your attendance percentage based on hypothetical upcoming classes you attend or skip.</div>
 </div>""", unsafe_allow_html=True
         )
 
@@ -1448,19 +1138,19 @@ f"""<div class="subject-row">
             )
 
             w_result = what_if(w_attended, w_total, attend_more, bunk_more)
-            w_color = "#2ecc71" if "Safe" in w_result["status"] else "#ffa500" if "Risky" in w_result["status"] else "#ff4b4b"
+            w_cls = "whatif-safe" if "Safe" in w_result["status"] else "whatif-warn" if "Risky" in w_result["status"] else "whatif-crit"
 
             st.markdown(f"""
-            <div style="margin-top:10px; padding:20px; background-color: rgba(0,0,0,0.2); border-radius: 8px; border-left: 4px solid {w_color};">
-                <div style="font-size: 0.95rem; color: #94a3b8; margin-bottom: 5px;">Projected Attendance</div>
-                <div style="font-size: 2.2rem; font-weight: 700; color: #f8fafc;">{w_result['percent']}%</div>
-                <div style="font-size: 0.95rem; color: {w_color}; margin-top: 5px; font-weight: 600;">Status: {w_result['status']}</div>
+            <div class="whatif-result {w_cls}">
+                <div class="whatif-label">Projected Attendance</div>
+                <div class="whatif-percent">{w_result['percent']}%</div>
+                <div class="whatif-status">Status: {w_result['status']}</div>
             </div>
             """, unsafe_allow_html=True)
 
             if w_result["needed"] is not None and w_result["needed"] > 0:
                 st.markdown(f"""
-                <div style="margin-top:20px; font-size: 0.9rem; color:#94a3b8; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 15px;">
+                <div class="whatif-needed">
                     ⚠️ You must legitimately attend <b>{w_result['needed']} consecutive classes</b> from now to reach 75%.
                 </div>
                 """, unsafe_allow_html=True)
@@ -1475,7 +1165,7 @@ f"""<div class="subject-row">
         st.markdown(
 """<div class="dash-card">
     <div class="card-title">📈 Attendance Forecast</div>
-    <div style="font-size:0.9rem; color:#94a3b8;">Simulate your future attendance trajectory to visually see how close you are to the border.</div>
+    <div class="card-subtext">Simulate your future attendance trajectory to visually see how close you are to the border.</div>
 </div>""", unsafe_allow_html=True
         )
 
@@ -1544,29 +1234,11 @@ f"""<div class="subject-row">
             st.markdown("</div>", unsafe_allow_html=True)
 
 
-#-----------------------
-#    Copyright
-#-----------------------
-
 # -----------------------------
 # Footer / Copyright
 # -----------------------------
 
 st.markdown("""
-<style>
-.footer {
-    
-    width: 100%;
-    margin-top: auto;
-    padding: 20px 0;
-    background-color: #020617;
-    color: rgba(255, 255, 255, 0.5);
-    text-align: center;
-    font-size: 14px;
-    border-top: 1px solid rgba(255,255,255,0.1);
-}
-</style>
-
 <div class="footer">
     <p>&copy; 2026 Akshat N & Akshat D. All rights reserved.</p>
 </div>

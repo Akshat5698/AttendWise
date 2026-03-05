@@ -1,0 +1,96 @@
+/* ----------------------------- */
+/* Setup Screen Visibility */
+/* ----------------------------- */
+[data-testid="stHeader"],
+[data-testid="stToolbar"],
+[data-testid="stSidebar"],
+footer {
+    display: none !important;
+}
+
+/* ----------------------------- */
+/* Setup Layout Wrapper */
+/* ----------------------------- */
+.main .block-container {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 100vh !important;
+    padding: 0 24px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* ----------------------------- */
+/* Setup Form Container */
+/* ----------------------------- */
+div[data-testid="stForm"] {
+    width: min(1000px, 100%) !important;
+    margin: 0 auto !important;
+    background-color: #111827 !important;
+    padding: 40px !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.05) !important;
+}
+
+/* ----------------------------- */
+/* Setup Buttons */
+/* ----------------------------- */
+div[data-testid="stForm"] .stFormSubmitButton > button {
+    background-color: transparent !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    color: white !important;
+    border-radius: 8px !important;
+    min-height: 48px !important;
+    transition: all 0.2s ease-in-out !important;
+}
+
+div[data-testid="stForm"] .stFormSubmitButton > button:hover {
+    border-color: #66c3c7 !important;
+    color: #66c3c7 !important;
+    background-color: rgba(102, 195, 199, 0.05) !important;
+}
+
+/* ----------------------------- */
+/* Setup Labels */
+/* ----------------------------- */
+div[data-testid="stForm"] .stFileUploader label > div > p,
+div[data-testid="stForm"] .stSelectbox label p {
+    font-weight: 500 !important;
+    font-size: 0.95rem !important;
+    color: #f8fafc !important;
+}
+
+/* ----------------------------- */
+/* Setup Heading */
+/* ----------------------------- */
+.setup-heading {
+    margin-bottom: 15px;
+}
+
+.setup-title {
+    font-weight: 700;
+    font-size: 2rem;
+    margin: 0 0 4px 0;
+    padding: 0;
+}
+
+.setup-subtitle {
+    color: #94a3b8;
+    margin: 0;
+    padding: 0;
+    font-size: 1.05rem;
+}
+
+/* ----------------------------- */
+/* Responsive (Mobile) */
+/* ----------------------------- */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding: 0 14px !important;
+    }
+
+    div[data-testid="stForm"] {
+        padding: 24px !important;
+    }
+}
