@@ -6,3 +6,4 @@ scikit-learn
 PyPDF2
 pdfplumber
 openpyxl
+pytz
